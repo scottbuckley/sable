@@ -3,6 +3,9 @@
 
 #include <boost/tuple/tuple.hpp>
 #include <boost/unordered_map.hpp>
+#include <spot/twa/acc.hh>
+
+#include <spot/twaalgos/dualize.hh>
 
 // Pair with hash adapted from https://stackoverflow.com/a/3612272
 // doing it this way so that i can use a fast hashmap containing pairs,
@@ -23,6 +26,8 @@ std::size_t hash_value(const Pair &e) {
   boost::hash_combine(seed, e.tuple.get<1>());
   return seed;
 }
+
+
 
 // to be able to use Arrays in an unordered_map. taken from https://stackoverflow.com/a/42701911
 struct ArrayHasher {
@@ -173,7 +178,7 @@ twa_graph_ptr kcobuchi_expand(twa_graph_ptr input, unsigned k) {
 twa_graph_ptr kcobuchi_expand2(twa_graph_ptr input, unsigned k) {
     // check that the input graph is universal cobuchi with exactly one fin set.
     if (input->prop_universal() != true)
-        throw std::invalid_argument("input graph must be deterministic.");
+        throw std::invalid_argument("input graph must be universal.");
     acc_cond acc = input->get_acceptance();
     if (!acc.is_co_buchi())
         throw std::invalid_argument("input graph must use coBuchi acceptance.");
@@ -193,21 +198,25 @@ twa_graph_ptr kcobuchi_expand2(twa_graph_ptr input, unsigned k) {
     state_cache created_states;
 
     bool trap_state_created = false;
-    unsigned trap_state;
+    unsigned trap_state_cache;
     function<unsigned()> get_trap_state
     = [&]() {
         if (!trap_state_created) {
-            trap_state = output->new_state();
-            trapify_state(output, trap_state, fin_set);
+            trap_state_created = true;
+            trap_state_cache = output->new_state();
+            trapify_state(output, trap_state_cache, fin_set);
+            created_states[{999, k+1}] = trap_state_cache;
         }
-        return trap_state;
+        return trap_state_cache;
     };
 
     // "visit" a state on the new graph, considering the transitions of the equivalent state
     // on the input graph, potentially creating new states and edges as you go.
     function<void(unsigned, unsigned, unsigned)> visit_state
     = [&](unsigned curstate_input, unsigned curstate_output, unsigned curcount) {
-        unsigned next_count = curcount + is_accepting_state(input, curstate_input, fin_set);
+        // we visited this state, which means we have already decided that we do not already
+        // exceed the k limit.
+        curcount = curcount + is_accepting_state(input, curstate_input, fin_set);
 
         // keep track of newly created states that need to be visited
         vector<tuple<unsigned,unsigned>> states_to_visit;
@@ -215,33 +224,38 @@ twa_graph_ptr kcobuchi_expand2(twa_graph_ptr input, unsigned k) {
         // for each outgoing edge ...
         for (auto& e: input->out(curstate_input)) {
             if (!input->is_univ_dest(e.dst)) {
-                // next branch would be a 
-                
-                // ... add an edge to its equivalent state (which might need to be created) ...
-                const auto [state_created, next_state] = get_or_create_state(output, created_states, e.dst, next_count);
-                // ... and potentially mark it for later visitation.
-                if (state_created) {
-                    if (next_count <= k) {
+                // once we step to the next state, what will the count be?
+                unsigned next_count = curcount + is_accepting_state(input, e.dst, fin_set);
+                if (next_count > k) {
+                    // the next state will have a count > k, so it should be a (the) trap state
+                    const unsigned next_state = get_trap_state();
+                    output->new_edge(curstate_output, next_state, e.cond);
+                } else {
+                    // make an edge to the next (maybe new) state
+                    const auto [state_created, next_state] = get_or_create_state(output, created_states, e.dst, next_count);
+                    output->new_edge(curstate_output, next_state, e.cond);
+                    if (state_created)
                         states_to_visit.push_back({e.dst, next_state});
-                    } else {
-                        trapify_state(output, next_state, fin_set);
-                    }
                 }
-                output->new_edge(curstate_output, next_state, e.cond);
             } else {
                 // ... if it's universal, do this for each of the universal destinations, keeping
                 // track of the new destinations needed for the new universal edge ...
                 vector<unsigned> new_univ_dests;
+                bool trap_already_added = false;
                 for (auto d: input->univ_dests(e.dst)) {
-                    const auto [state_created, next_state] = get_or_create_state(output, created_states, d, next_count);
-                    new_univ_dests.push_back(next_state);
-                    // ... and potentially mark each of them for later visitation.
-                    if (state_created) {
-                        if (next_count <= k) {
-                            states_to_visit.push_back({d, next_state});
-                        } else {
-                            trapify_state(output, next_state, fin_set);
+                    unsigned next_count = curcount + is_accepting_state(input, d, fin_set);
+                    //TODO: there is an optimisation we could do here, where if any of the
+                    // universal destinations lead to a trap, they should all lead to a trap.
+                    if (next_count > k) {
+                        if (!trap_already_added) {
+                            trap_already_added = true;
+                            new_univ_dests.push_back(get_trap_state());
                         }
+                    } else {
+                        const auto [state_created, next_state] = get_or_create_state(output, created_states, d, next_count);
+                        new_univ_dests.push_back(next_state);
+                        if (state_created)
+                            states_to_visit.push_back({d, next_state});
                     }
                 }
                 output->new_univ_edge(curstate_output, new_univ_dests.begin(), new_univ_dests.end(), e.cond);
@@ -249,18 +263,96 @@ twa_graph_ptr kcobuchi_expand2(twa_graph_ptr input, unsigned k) {
         }
         // now recursively visit all the newly created states we marked for visitation.
         for (auto [si, so] : states_to_visit)
-            visit_state(si, so, next_count);
+            visit_state(si, so, curcount);
     };
 
     // now, set up the new initial state ...
     const unsigned init_state = input->get_init_state_number();
     const bool init_accepting = is_accepting_state(input, init_state, fin_set);
     const unsigned new_init_state = output->new_state();
-    created_states[{init_state, init_accepting}] = new_init_state;
-    // ... and get the ball rolling by visiting it.
-    visit_state(init_state, new_init_state, init_accepting);
-
-    print_expansion_key(created_states);
-
+    if (init_accepting && k<1) {
+        // weird case where the input state is accepting but k=0, meaning
+        // we must immediately fail.
+        trapify_state(output, new_init_state, fin_set);
+        cout << "replaced entire graph with single trap state, as k<1 and the initial state was accepting." << endl;
+    } else {
+        created_states[{init_state, init_accepting}] = new_init_state;
+        visit_state(init_state, new_init_state, init_accepting);
+        print_expansion_key(created_states);
+    }
     return output;
+}
+
+// FIXME: can I do this more efficiently with a generator?
+vector<unsigned> get_all_dests(twa_graph_ptr g, unsigned s) {
+    vector<unsigned> dests;
+    for (auto e : g->out(s)) {
+        if (g->is_univ_dest(e.dst)) {
+            for (auto d : g->univ_dests(e.dst))
+                dests.push_back(d);
+        } else {
+            dests.push_back(e.dst);
+        }
+    }
+    return dests;
+}
+
+
+// given a set of edges, return a bdd representing unrepresented edge possibilities.
+bdd get_unspecified_edge_cond(spot::internal::state_out<twa_graph::graph_t> es) {
+    bdd conditions = bddtrue;
+    for (auto e : es)
+        conditions -= e.cond;
+    return conditions;
+}
+
+void complete_coBuchi_here(twa_graph_ptr g) {
+    acc_cond acc = g->get_acceptance();
+
+    // get the acceptance set we should use
+    unsigned fin_set = 0;
+    if (acc.num_sets() == 0) {
+        // make this cobuchi if it isn't already.
+        g->set_acceptance(acc_cond(acc_cond::acc_code::fin({fin_set})));
+    } else {
+        fin_set = acc.fin_one();
+    }
+    
+    bool trap_state_created = false;
+    unsigned trap_state;
+
+    unordered_set<unsigned> visited;
+    function<void(unsigned)> visit_state = [&](unsigned curstate) {
+        if (visited.count(curstate) == 0) {
+            visited.insert(curstate);
+            // first we visit all other edges, so we don't have to exclude this new
+            // edge as we traverse.
+            for (unsigned d : get_all_dests(g, curstate))
+                visit_state(d);
+            bdd unspecified = get_unspecified_edge_cond(g->out(curstate));
+            if (unspecified != bddfalse) {
+                // not everything is defined for this output state
+                if (!trap_state_created) {
+                    // create the trap state
+                    trap_state = g->new_state();
+                    g->new_edge(trap_state, trap_state, bddtrue, {fin_set});
+                    trap_state_created = true;
+                }
+                g->new_edge(curstate, trap_state, unspecified);
+            }
+        }
+    };
+    visit_state(g->get_init_state_number());
+}
+
+twa_graph_ptr dualize_to_univ_coBuchi(twa_graph_ptr g) {
+    acc_cond acc = g->get_acceptance();
+    if (!acc.is_buchi())
+        throw std::invalid_argument("input graph must use Buchi acceptance.");
+    twa_graph_ptr dual = dualize(g);
+    acc = dual->get_acceptance();
+    if (acc.is_all())
+        complete_coBuchi_here(dual);
+    dual->prop_universal(1);
+    return dual;
 }
