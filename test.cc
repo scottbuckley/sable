@@ -1,5 +1,7 @@
 #include "test.hh"
 #include "kcobuchi.cc"
+#include "words.cc"
+#include "membership.cc"
 
 #include <spot/tl/dot.hh>
 #include <spot/twaalgos/dualize.hh>
@@ -7,7 +9,19 @@
 #include <spot/twaalgos/isdet.hh>
 #include <spot/twaalgos/contains.hh>
 
-#define starting_ltl "G(b->Xb->FGb)"
+
+#define starting_ltl "G (a -> Xa -> XX!a)"
+
+/*
+  TODO:
+  - fix first-count error DONE
+  - don't expand bad sinks DONE
+  - optimise good sinks (?)
+  - give phuong a cuddle
+  - change membership query to:
+    - track a set of states (optimisation)
+    - follow alternating automata semantics ("OR" between edges, "AND" between univ dests)
+*/
 
 twa_graph_ptr get_buchi(formula ltl) {
   translator trans;
@@ -35,15 +49,22 @@ int main() {
   formula ltl_neg = formula::Not(ltl);
   twa_graph_ptr buchi_neg = get_buchi(ltl_neg);
   twa_graph_ptr cobuchi = dualize_to_univ_coBuchi(buchi_neg);
-  twa_graph_ptr cobuchi_normaldualize = dualize(buchi_neg);
-  twa_graph_ptr kcobuchi = kcobuchi_expand2(cobuchi, 2);
+  // twa_graph_ptr cobuchi_normaldualize = dualize(buchi_neg);
+  // twa_graph_ptr cobuchi_dualize2 = dualize2(buchi_neg);
+  twa_graph_ptr kcobuchi = kcobuchi_expand(cobuchi, 10);
+
+  // generate a bunch of images
   generate_graph_image(buchi_neg, true, "buchi");
-  generate_graph_image(cobuchi_normaldualize, true, "dualized");
+  // generate_graph_image(cobuchi_normaldualize, true, "dualized");
+  // generate_graph_image(cobuchi_dualize2, true, "dualize2d");
   generate_graph_image(cobuchi, true, "cobuchi");
   generate_graph_image(kcobuchi, true);
-  
+
+  // auto w = string_to_prefix(kcobuchi->get_dict(), "bbbaabaab", true);
+  // cout << prefix_to_string(kcobuchi->get_dict(), w) << endl;
+  // cout << prefix_hits_accepting(kcobuchi, w, true) << endl;
   // cout << are_equivalent(buchi_neg, formula::tt());
-  display_graph_info(cobuchi, "cobuchi");
+  // display_graph_info(cobuchi, "cobuchi");
 
   return 0;
 }
