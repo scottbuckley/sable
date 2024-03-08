@@ -8,6 +8,8 @@
 #include <spot/twa/acc.hh>
 
 #include <spot/twaalgos/dualize.hh>
+#include <spot/misc/trival.hh>
+
 
 // Pair with hash adapted from https://stackoverflow.com/a/3612272
 // doing it this way so that i can use a fast hashmap containing pairs,
@@ -50,20 +52,11 @@ void trapify_state(twa_graph_ptr g, unsigned state, unsigned fin_set) {
     g->new_edge(state, state, bddtrue, {fin_set});
 }
 
-// check if a state is accepting, in that it has the accepting set 'fin_set'.
-// yes, it's insane that you have to do it this way, but it's the same in the spot source;
-// acceptance info is only stored in edges.
-bool is_accepting_state(twa_graph_ptr g, unsigned state, unsigned fin_set) {
-    // look at the first edge, and look through its accepting sets to find 'fin_set'.
-    for (auto& t: g->out(state)) {
-        for (auto v: t.acc.sets())
-            if (v == fin_set) return true;
-        break;
-    }
-    return false;
-};
+void happify_state(twa_graph_ptr g, unsigned state, unsigned fin_set) {
+    g->new_edge(state, state, bddtrue, {});
+}
 
-bool is_accepting_state(twa_graph_ptr g, unsigned state) {
+bool is_accepting_state(twa_graph_ptr g, const unsigned state) {
     for (auto& t: g->out(state)) {
         for (auto v: t.acc.sets())
             return true;
@@ -72,9 +65,26 @@ bool is_accepting_state(twa_graph_ptr g, unsigned state) {
     return false;
 };
 
-bool is_accepting_sink(twa_graph_ptr g, unsigned state, bool assume_state_is_accepting=false) {
-    if (!assume_state_is_accepting && !is_accepting_state(g, state)) return false;
-    // return false if you find any branches that leave this state
+
+typedef std::vector<trival> accepting_state_cache;
+accepting_state_cache make_accepting_state_cache(twa_graph_ptr g) {
+    accepting_state_cache c;
+    c.resize(g->num_states(), trival::maybe());
+    return c;
+}
+bool is_accepting_state(twa_graph_ptr g, const unsigned state, accepting_state_cache & cache) {
+    const trival cached_trival = cache.at(state);
+    if (cached_trival.is_maybe()) {
+        const bool acc = is_accepting_state(g, state);
+        cache[state] = acc;
+        return acc;
+    } else {
+        return cached_trival.is_true();
+    }
+};
+
+bool is_sink(twa_graph_ptr g, unsigned state) {
+    // only return false if you find any branches that leave this state.
     for (auto e : g->out(state))
         if (!g->is_univ_dest(e.dst))
             { if (e.dst != state) return false; }
@@ -111,7 +121,7 @@ bool_unsigned get_or_create_state(twa_graph_ptr g, state_cache & created_states,
     return (bool_unsigned){state_is_new, state_id};
 }
 
-twa_graph_ptr kcobuchi_expand(twa_graph_ptr input, unsigned k, bool unroll_accepting_sinks=false) {
+twa_graph_ptr kcobuchi_expand(twa_graph_ptr input, unsigned k) {
     // check that the input graph is universal cobuchi with exactly one fin set.
     if (input->prop_universal() != true)
         throw std::invalid_argument("input graph must be universal.");
@@ -122,6 +132,8 @@ twa_graph_ptr kcobuchi_expand(twa_graph_ptr input, unsigned k, bool unroll_accep
         throw std::invalid_argument("input graph must have exactly one acceptance set.");
 
     unsigned fin_set = acc.fin_one();
+
+    accepting_state_cache asc = make_accepting_state_cache(input);
 
     // create the output graph
     twa_graph_ptr output = make_twa_graph(input->get_dict());
@@ -146,15 +158,28 @@ twa_graph_ptr kcobuchi_expand(twa_graph_ptr input, unsigned k, bool unroll_accep
         return trap_state_cache;
     };
 
+    bool happy_state_created = false;
+    unsigned happy_state_cache;
+    function<unsigned()> get_happy_state
+    = [&]() {
+        if (!happy_state_created) {
+            happy_state_created = true;
+            happy_state_cache = output->new_state();
+            happify_state(output, happy_state_cache, fin_set);
+            created_states[{999, 0}] = happy_state_cache;
+        }
+        return happy_state_cache;
+    };
+
     // "visit" a state on the new graph, considering the transitions of the equivalent state
     // on the input graph, potentially creating new states and edges as you go.
     // note: `curcount` is the count BEFORE entering this state.
     function<void(unsigned, unsigned, unsigned)> visit_state
     = [&](unsigned curstate_input, unsigned curstate_output, unsigned curcount) {
-        cout << "visit(" << curstate_input << ", " << curstate_output << ", " << curcount << ")" << endl;
+        // cout << "visit(" << curstate_input << ", " << curstate_output << ", " << curcount << ")" << endl;
         // we visited this state, which means we have already decided that we do not already
         // exceed the k limit.
-        bool is_accepting = is_accepting_state(input, curstate_input);
+        bool is_accepting = is_accepting_state(input, curstate_input, asc);
         curcount = curcount + is_accepting;
 
         // keep track of newly created states that need to be visited
@@ -164,11 +189,17 @@ twa_graph_ptr kcobuchi_expand(twa_graph_ptr input, unsigned k, bool unroll_accep
         for (auto& e: input->out(curstate_input)) {
             if (!input->is_univ_dest(e.dst)) {
                 // once we step to the next state, what will the count be?
-                unsigned next_count = curcount + is_accepting_state(input, e.dst);
-                if (next_count > k || is_accepting_sink(input, e.dst)) {
-                    // the next state will have a count > k, so it should be a (the) trap state
-                    const unsigned next_state = get_trap_state();
-                    output->new_edge(curstate_output, next_state, e.cond);
+                bool next_is_accepting = is_accepting_state(input, e.dst, asc);
+                bool next_is_sink = is_sink(input, e.dst);
+                unsigned next_count = curcount + next_is_accepting;
+                if (next_count > k || (next_is_accepting && next_is_sink)) {
+                    // the next state will have a count > k, or is an accepting sink,
+                    // so it should just reference the trap state.
+                    output->new_edge(curstate_output, get_trap_state(), e.cond);
+                } else if (next_is_sink && !next_is_accepting) {
+                    // the next state is an accepting sink, so just forward it to
+                    // the happy state.
+                    output->new_edge(curstate_output, get_happy_state(), e.cond);
                 } else {
                     // make an edge to the next (maybe new) state
                     const auto [state_created, next_state] = get_or_create_state(output, created_states, e.dst, next_count);
@@ -180,15 +211,23 @@ twa_graph_ptr kcobuchi_expand(twa_graph_ptr input, unsigned k, bool unroll_accep
                 // ... if it's universal, do this for each of the universal destinations, keeping
                 // track of the new destinations needed for the new universal edge ...
                 vector<unsigned> new_univ_dests;
+                // if two destinations of the universal branch lead to a trap state, we instead
+                // just send one to the trap state. same thing with the happy state.
                 bool trap_already_added = false;
+                bool happy_already_added = false;
                 for (auto d: input->univ_dests(e.dst)) {
-                    unsigned next_count = curcount + is_accepting_state(input, d);
-                    //TODO: there is an optimisation we could do here, where if any of the
-                    // universal destinations lead to a trap, they should all lead to a trap.
-                    if (next_count > k  || is_accepting_sink(input, d)) {
+                    bool next_is_accepting = is_accepting_state(input, d, asc);
+                    bool next_is_sink = is_sink(input, d);
+                    unsigned next_count = curcount + next_is_accepting;
+                    if (next_count > k || (next_is_accepting && next_is_sink)) {
                         if (!trap_already_added) {
                             trap_already_added = true;
                             new_univ_dests.push_back(get_trap_state());
+                        }
+                    } else if(next_is_sink && !next_is_accepting) {
+                        if (!happy_already_added) {
+                            happy_already_added = true;
+                            new_univ_dests.push_back(get_happy_state());
                         }
                     } else {
                         const auto [state_created, next_state] = get_or_create_state(output, created_states, d, next_count);
@@ -207,7 +246,7 @@ twa_graph_ptr kcobuchi_expand(twa_graph_ptr input, unsigned k, bool unroll_accep
 
     // now, set up the new initial state ...
     const unsigned init_state = input->get_init_state_number();
-    const bool init_accepting = is_accepting_state(input, init_state);
+    const bool init_accepting = is_accepting_state(input, init_state, asc);
     const unsigned new_init_state = output->new_state();
     if (init_accepting && k<1) {
         // weird case where the input state is accepting but k=0, meaning
@@ -217,7 +256,7 @@ twa_graph_ptr kcobuchi_expand(twa_graph_ptr input, unsigned k, bool unroll_accep
     } else {
         created_states[{init_state, init_accepting}] = new_init_state;
         visit_state(init_state, new_init_state, 0);
-        print_expansion_key(created_states);
+        // print_expansion_key(created_states);
     }
     return output;
 }

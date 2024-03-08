@@ -65,6 +65,13 @@
         "deque": "cpp",
         "stack": "cpp",
         "source_location": "cpp",
-        "typeindex": "cpp"
-    }
+        "typeindex": "cpp",
+        "functional": "cpp",
+        "iterator": "cpp",
+        "memory": "cpp"
+    },
+    "lldb.displayFormat": "auto",
+    "lldb.showDisassembly": "auto",
+    "lldb.dereferencePointers": true,
+    "lldb.consoleMode": "commands"
 }
