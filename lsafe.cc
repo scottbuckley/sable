@@ -3,6 +3,11 @@
 #include <spot/twa/formula2bdd.hh>
 #include "btree.cc"
 #include "membership.cc"
+#include "safety_games.cc"
+#include <spot/twaalgos/complement.hh>
+#include <spot/twaalgos/complete.hh>
+
+#define longest_counterexample 100
 // #include <spot/twa/bdddict.hh>
 
 /*
@@ -22,6 +27,7 @@ typedef std::vector<bool> Lrow;
 typedef std::vector<Lrow> Ltable;
 
 bool empty_is_member(twa_graph_ptr g) {
+
     return is_accepting_state(g, g->get_init_state_number());
 }
 
@@ -52,6 +58,13 @@ better_var_map_ptr get_better_var_map(bdd_dict_ptr dict) {
     for (auto [f, i] : dict->var_map)
         bvm->push_back({f, i});
     return bvm;
+}
+
+bdd make_varset_bdd (better_var_map_ptr bvm) {
+    bdd out = bddtrue;
+    for (auto & [f, v] : *bvm)
+        out &= bdd_ithvar(v);
+    return out;
 }
 
 bdd make_bdd_from_bits(unsigned bits, better_var_map_ptr bvm) {
@@ -90,26 +103,122 @@ const finite_word_ptr empty_word() {
     return make_finite_word();
 }
 
-void Lsafe(twa_graph_ptr kucb) {
+finite_word_ptr copy_word(finite_word_ptr word) {
+    finite_word_ptr out = make_finite_word();
+    auto end = word->end();
+    for (auto it = word->begin(); it!=end; ++it) {
+        out->push_back(*it);
+    }
+    return out;
+}
+
+string dump_lsafe_state(bdd_dict_ptr dict, std::vector<prefix> P, std::vector<suffix> S, btree * tbl) {
+    stringstream out;
+    tbl->print(out);
+    out << endl << "P:" << endl;
+    for (prefix p : P) {
+        out << " - " << prefix_to_string(dict, p) << endl;
+    }
+    out << "S:" << endl;
+    for (prefix s : S) {
+        out << " - " << prefix_to_string(dict, s) << endl;
+    }
+    return out.str();
+}
+
+// void dump_lsafe_state(bdd_dict_ptr dict, std::vector<prefix> P, std::vector<suffix> S, btree * tbl) {
+//     cout << endl << "dumping LSafe state: " << endl;
+//     cout << "P:" << endl;
+//     for (prefix p : P) {
+//         cout << " - " << prefix_to_string(dict, p) << endl;
+//     }
+//     cout << "S:" << endl;
+//     for (prefix s : S) {
+//         cout << " - " << prefix_to_string(dict, s) << endl;
+//     }
+//     tbl->print();
+// }
+
+bool word_not_empty(twa_word_ptr word) {
+    return (word != nullptr);
+}
+
+// this uses a known infinite counterexample to check against two machines, to find the shortest prefix
+// that is a counterexample. Actually this is silly, we aren't using the knowledge that this is known to
+// be a counterexample, so we already know it will succeed on the "machine". so this function is silly lol
+finite_word_ptr find_finite_counterexample(twa_graph_ptr machine, twa_graph_ptr kucb, twa_word_ptr counterexample) {
+    UCBWalker walk_machine = UCBWalker(machine);
+    UCBWalker walk_kucb = UCBWalker(kucb);
+    finite_word_ptr out = make_finite_word();
+    for (bdd letter : counterexample->prefix) {
+        out->push_back(letter);
+        if (walk_machine.step(letter) != walk_kucb.step(letter))
+            return out;
+    }
+    for (unsigned i=0; i<longest_counterexample; i++) {
+        for (bdd letter : counterexample->cycle) {
+            out->push_back(letter);
+            if (walk_machine.step(letter) != walk_kucb.step(letter))
+                return out;
+        }
+    }
+    throw std::runtime_error("we didnt' find a counterexample after " + to_string(longest_counterexample) + " steps. something wrong here?");
+}
+
+inline bdd complete_letter(bdd letter, bdd varset) {
+    return bdd_satoneset(letter, varset, bddtrue);
+}
+
+void fully_specify_word(twa_word_ptr word, bdd & varset) {
+    for (bdd & letter : word->prefix)
+        letter = complete_letter(letter, varset);
+    for (bdd & letter : word->cycle)
+        letter = complete_letter(letter, varset);
+}
+
+// this assumes that the given counterexample is in fact a counterexample, so it will
+// eventually fail when executing on the machine "g"
+finite_word_ptr find_shortest_failing_prefix(twa_graph_ptr g, twa_word_ptr counterexample) {
+    UCBWalker walker = UCBWalker(g);
+    finite_word_ptr out = make_finite_word();
+    for (bdd & letter : counterexample->prefix) {
+        out->push_back(letter);
+        if (walker.step(letter)) return out;
+    }
+    for (unsigned i=0; i<longest_counterexample; i++) {
+        for (bdd & letter : counterexample->cycle) {
+            out->push_back(letter);
+            if (walker.step_verbose(letter)) return out;
+        }
+    }
+    throw std::runtime_error("we didnt' find a counterexample after " + to_string(longest_counterexample) + " steps. something wrong here?");
+}
+
+void Lsafe(twa_graph_ptr kucb, ap_map apmap) {
     if (!is_reasonable_ucb(kucb)) throw invalid_argument("provided graph must be a UCB.");
+    page_text("Beginning LSafe.");
 
     const bdd_dict_ptr dict = kucb->get_dict();
     better_var_map_ptr bvm = get_better_var_map(dict);
+    bdd varset = make_varset_bdd(bvm);
     alphabet_vec alphabet = alphabet_from_bvm(bvm);
     unsigned letter_count = alphabet.size();
+    UCBWalker walk = UCBWalker(kucb);
+    const unsigned h_fin_set = 0;
 
-    // std::vector<prefix> Q; // set of states (in terms of state consistency)
-    // std::vector<suffix> T; // set of separating suffixes
+    twa_graph_ptr kucb_complement = spot::complement(kucb);
+    page_graph(kucb_complement, "kUCB complement");
 
-    // // initial values for Q and T
-    // Q[0] = empty_word();
-    // T[0] = empty_word();
+    const bool init_state_accepted = !walk.failed();
+    page_text_bool(init_state_accepted, "The empty word is accepted.", "The empty word is not accepted.");
+
+
+    std::vector<prefix> P = {empty_word()}; // set of states (in terms of state consistency)
+    std::vector<suffix> S = {empty_word()};; // set of separating suffixes
 
     // set up blank table - we start with only empty in row and col,
-    // which is true iff the kuch accepts the empty word
-    // Ltable tbl = {{empty_is_member(kucb)}};
-    
-    // btree tbl = *btreebool(empty_is_member(kucb), 0);
+    // which is true iff the kucb accepts the empty word
+    btree * tbl = btreebool(init_state_accepted, 0);
 
     // function<bool(prefix)> find_or_create_row = [&](prefix prefix) {
     //     for (suffix suffix : T) {
@@ -118,27 +227,224 @@ void Lsafe(twa_graph_ptr kucb) {
     //     return false;
     // };
 
-    // function<void()> close_table = [&]() {
-    //     // take a look at each row, and see if it can "step" into another row after one letter.
-    //     for (unsigned row : tbl) {
-    //         prefix prefix = Q[row];
-    //         for (unsigned letter=0; letter<letter_count; ++letter) {
-    //             bdd letter_bdd = alphabet[letter];
+    auto get_or_create_sink_row = [&]() {
+        // cout << "we found an empty row to create: " << i << endl;
+        // tbl->print();
+        btree * cur_node = tbl;
+        for (unsigned i=0; i<S.size(); ++i)
+            cur_node = cur_node->force_false();
+        return cur_node;
+        // if (cur_node->has_rowid()) {
+        //     // it already exists.
+        //     return cur_node->get_rowid();
+        // } else {
+        //     cur_node->set_rowid(id_if_creating);
+        //     return id_if_creating;
+        // }
+    };
 
-    //             // if you're in state "row", and then add letter "letter", we need to be able to step to
-    //             // another row-state.
-    //             Lrow next_row;
-    //             // for ()
-    //         }
-    //     }
+    function<twa_graph_ptr()> close_table = [&]() {
+        cout << "closing table (FROM SCRATCH - this should be made a lot sexier)" << endl;
+        
+        // take a look at each row, and see if it can "step" into another row after one letter.
+        twa_graph_ptr H = make_twa_graph(dict);
+        H->set_acceptance(acc_cond::acc_code::cobuchi());
+        H->prop_state_acc(true);
+        for (unsigned i=0; i<P.size(); i++) {
+            prefix prefix = P[i];
+            // cout << "- considering prefix index = " << i << ", word = " << prefix_to_string(dict, prefix) << endl;
+            // tbl->print();
+            auto new_state_num = H->new_state();
+            if (new_state_num != i) throw std::logic_error("the assumption that these states will have ids that align with my code here was obvbiously wrong");
+            walk.reset();
+            walk.walk(prefix);
+            if (!walk.failed()) {
+                auto prefix_state = walk.get_position();
+                bdd prevletter = bddtrue;
+                for (unsigned l=0; l<letter_count; ++l) {
+                    walk.set_position(prefix_state);
+                    bdd letter = alphabet[l];
+                    // cout << "  - considering letter = " << bdd_to_formula(letter, dict) << endl;
+                    walk.step(letter);
+                    if (!walk.failed()) {
+                        auto prefix_letter_state = walk.get_position();
+                        btree * cur_node = tbl;
+                        for (suffix suffix : S) {
+                            // cout << "    - considering suffix = " << prefix_to_string(dict, suffix) << endl;
+                            walk.set_position(prefix_letter_state);
+                            walk.walk(suffix);
+                            // cout << "      - " << !walk.failed() << endl;
+                            cur_node = cur_node->force_bool(!walk.failed());
+                        }
+                        if (!cur_node->has_rowid()) {
+                            // cout << "      - " << "[making new row]" << endl;
+                            cur_node->set_rowid(P.size());
+                            P.push_back(finite_word_append(prefix, letter));
+                        }
+                        H->new_edge(i, cur_node->get_rowid(), letter);
+                    } else {
+                        // the prefix already fails. no need to do any more checks, but
+                        // need to fill out the table anyway.
+                        btree* empty_row = get_or_create_sink_row();
+                        if (!empty_row->has_rowid()) {
+                            empty_row->set_rowid(P.size());
+                            P.push_back(finite_word_append(prefix, letter));                            
+                        }
+                        H->new_edge(i, empty_row->get_rowid(), letter);
+                    }
+                }
+            } else {
+                // this prefix immediately fails. it is the empty row, so it should always point
+                // only to itself.
+                btree* empty_row = get_or_create_sink_row();
+                if (!empty_row->has_rowid()) {
+                    empty_row->set_rowid(i);
+                }
+                H->new_acc_edge(i, i, bddtrue, true);
+            }
+        }
+        // now we are going to set acceptance on the appropriate states.
+        // for (btree::BTIterator it = tbl->begin(); it!=tbl->end(); ++it) {
+        //     const bool is_accepting = false;
+        //     cout << *it << endl;
+        // }
+        return H;
+    };
 
-    // };
+
+    auto extend_table_with_suffix = [&](suffix suffix) {
+        S.push_back(suffix);
+
+        // consider all existing leaves in the tree, and extend them
+        // with the suffix.
+        // potential optimisation: if i considered each leaf all at once, and walked each
+        // of them forward one letter at a time (of the suffix), to get to the point at which it is
+        // "enough" - what exactly is the definition of "enough"? I guess that it creates more states in the graph.
+        auto end = tbl->end();
+        for (auto it = tbl->begin(); it != end; ++it) {
+            unsigned idx = *it;
+            btree* bt = it.get_btree();
+            prefix prefix = P[idx];
+            walk.reset();
+            walk.walk(prefix);
+            walk.walk(suffix);
+            bt->set_rowid(-1);
+            if (walk.failed()) bt->bfalse = new btree(idx);
+            else               bt->btrue = new btree(idx);
+        }
+    };
+
+    // put the new prefix at the end of the table.
+    // throw an exception if it matches any existing rows.
+    // note: i'm not certain that it's a really a problem for it to match any
+    // existing rows :P
+    // note: this is not currently used
+    auto extend_table_with_prefix = [&](prefix prefix) {
+        const unsigned rowid = P.size();
+        P.push_back(prefix);
+        btree* bt = tbl;
+        walk.reset();
+        walk.walk(prefix);
+        auto prefix_state = walk.get_position();
+        for (suffix suffix : S) {
+            walk.set_position(prefix_state);
+            const bool accepted = !walk.walk(suffix);
+            bt = bt->force_bool(accepted);
+        }
+        if (bt->has_rowid()) throw std::logic_error("oh no, we are adding a row that is the same as all the others. that is no good");
+        bt->set_rowid(rowid);
+    };
 
 
+    for (unsigned i=1; i<=10; i++) {
+        if (i==10) {
+            page_text("stopping at 10 iterations");
+            cout << "stopping at 10 iterations" << endl;
+        }
 
-    // close the table
+        page_heading("LSafe iteration #" + to_string(i));
+        cout << "##################################" << endl;
+        cout << "###  LSAFE ITERATION   " << i << "       ###" << endl;
+        cout << "##################################" << endl;
+        // close the table
+        // dump_lsafe_state(dict, P, S, tbl);
+        page_text("Closing table ...");
+        twa_graph_ptr h = close_table();
+        page_code("Hypothesis table:", dump_lsafe_state(dict, P, S, tbl));
+        // page_graph(h, "Hypothesis graph (unmerged)");
+        // h->merge_edges();
+        page_graph(h, "Hypothesis graph");
+
+        auto [realizable, machine] = solve_safety(h, apmap);
+        if (realizable) {
+            page_text("Hypothesis is realisable.");
+            highlight_strategy_vec(h, 5, 4);
+            page_graph(h, "Strategy");
+            page_graph(machine, "Mealy machine");
+
+            twa_word_ptr counterexample = machine->intersecting_word(kucb_complement);
+            if (word_not_empty(counterexample)) {
+                fully_specify_word(counterexample, varset);
+                page_text(force_string(*counterexample), "Counterexample");
+                finite_word_ptr finite_counterexample = find_shortest_failing_prefix(kucb, counterexample);
+                page_text(prefix_to_string(dict, finite_counterexample), "Shortest finite counterexample");
+
+                // ok im trying just adding the whole thing as a suffix, except the first letter.
+                // page_text("Right now we are adding the entire counterexample, minus its first letter, as a suffix.");
+                page_text("Adding all suffixes of the counterexample to S.");
+                while (finite_counterexample->size()>1) {
+                    finite_counterexample->pop_front();
+                    // make a copy
+                    extend_table_with_suffix(copy_word(finite_counterexample));
+                }
+                page_code("Table after accounting for counterexample:", dump_lsafe_state(dict, P, S, tbl));
+            } else {
+                page_text("No counterexample found. I guess we are done?");
+                break;
+            }
+        } else {
+            page_text("Hypothesis is NOT realisable.");
+            highlight_strategy_vec(h, 5, 4);
+            page_graph(h, "Strategy");
+            page_graph(machine, "Moore machine");
+
+            twa_word_ptr counterexample = machine->intersecting_word(kucb);
+            if (word_not_empty(counterexample)) {
+                // fully_specify_word(counterexample, varset);
+                page_text(force_string(*counterexample), "Counterexample");
+                finite_word_ptr finite_counterexample = find_shortest_failing_prefix(kucb, counterexample);
+                page_text(prefix_to_string(dict, finite_counterexample), "Shortest finite counterexample");
+            } else {
+                page_text("No counterexample found. I guess we are done?");
+                break;
+            }
+
+            page_text("todo: complete this logic");
+            break;
+        }
+    }
 
 
+    // generate_graph_image(h, true);
+    // inclusion_query_etc(h);
+
+    // auto x = h->intersecting_word(kucb_complement);
+    // cout << "counterexample:" << endl;
+    // cout << *x << endl;
+
+    // auto xx = h->intersecting_run(kucb_complement);
+    //note: "take most permissive strategy" - make this a global option
+    
+    // auto z = x->as_automaton();
+    // generate_graph_image(z, true, "intersection");
+
+    // cout << "checking containment" << endl;
+    // bool x = spot::contains(kucb, h);
+    // cout << "answer: " << x << endl;
+
+
+    
+    // table closing seems to work for now (although it's not currently creating a graph)
     // twa_graph_ptr H = make_hypothesis_machine(Q, T, tbl, dict);
 
 

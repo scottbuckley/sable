@@ -3,13 +3,10 @@
 #include <iostream>
 using namespace std;
 
-bool vecbool_neq(std::vector<bool> lhs, std::vector<bool> rhs) {
-    return (lhs != rhs);
-}
-
 class btree {
+private:
+    int rowid = -1;
 public:
-    unsigned rowid;
     struct btree * bfalse;
     struct btree * btrue;
 
@@ -18,23 +15,57 @@ public:
     }
     btree() {}
 
+    unsigned get_rowid() {
+        if (rowid == -1) throw logic_error("trying to access the rowid that doesn't yet exist");
+        return rowid;
+    }
+
+    bool has_rowid() {
+        return (rowid != -1);
+    }
+
+    void set_rowid(unsigned data) {
+        rowid = data;
+    }
+
     bool is_leaf() {
         return !(btrue || bfalse);
     };
 
-    void print(string prefix = "") {
+    // void print(string prefix = "") {
+    //     if (is_leaf()) {
+    //         cout << prefix << "Leaf: " << rowid << endl;
+    //     } else {
+    //         if (btrue) {
+    //             cout << prefix << "True:" << endl;
+    //             btrue->print(prefix + ".  ");
+    //         }
+    //         if (bfalse) {
+    //             cout << prefix << "False:" << endl;
+    //             bfalse->print(prefix + ".  ");
+    //         }
+    //     }
+    // }
+
+    void print(stringstream & out, string prefix = "") {
         if (is_leaf()) {
-            cout << prefix << "Leaf: " << rowid << endl;
+            out << prefix << "Leaf: " << rowid << endl;
         } else {
             if (btrue) {
-                cout << prefix << "True:" << endl;
-                btrue->print(prefix + ".  ");
+                out << prefix << "True:" << endl;
+                btrue->print(out, prefix + ".  ");
             }
             if (bfalse) {
-                cout << prefix << "False:" << endl;
-                bfalse->print(prefix + ".  ");
+                out << prefix << "False:" << endl;
+                bfalse->print(out, prefix + ".  ");
             }
         }
+    }
+
+    void print() {
+        stringstream out;
+        print(out);
+        cout << out.str();
     }
 
     btree* force_true() {
@@ -47,6 +78,11 @@ public:
         if (bfalse) return bfalse;
         bfalse = new btree();
         return bfalse;
+    }
+
+    btree* force_bool(bool b) {
+        if (b) return force_true();
+        else   return force_false();
     }
 
     typedef std::vector<bool> bpath;
@@ -62,17 +98,6 @@ public:
     };
 
     struct BTIterator {
-        BTIterator(bpath path, bstack stack) {
-            bt_path = path;
-            bt_stack = stack;
-        };
-        
-        ~BTIterator() {};
-
-        unsigned operator*() const {
-            return bt_stack.back()->rowid;
-        }
-
         // assumes that we don't start with an empty stack
         void find_first() {
             while (true) {
@@ -88,9 +113,16 @@ public:
             }
         }
 
-        BTIterator(btree* root) {
+        BTIterator(bpath path, bstack stack) {
+            bt_path = path;
+            bt_stack = stack;
+        };
+        
+        ~BTIterator() {};
+
+        BTIterator(btree* root, const bool move_to_first = true) {
             bt_stack.push_back(root);
-            find_first();
+            if (move_to_first) find_first();
         }
 
         // static BTIterator begin(bpath & path, bstack & stack) {
@@ -112,23 +144,67 @@ public:
             cout << "path: ";
             for (auto b : bt_path)
                 cout << b;
-            cout << " stacklen: " << bt_stack.size() << " rowid: " << bt_stack.back()->rowid << endl;
+            cout << " stacklen: " << bt_stack.size() << " rowid: " << bt_stack.back()->get_rowid() << endl;
         };
 
+        // note: TRUE is on the LEFT.
+        // we explore TRUE before exploring FALSE
         BTIterator operator++() {
+            // cout << "calling ++" << endl;
+            // dump();
             if (bt_path.empty()) return *this;
             // go up while we are coming from "false" or if coming
             // from "true" but there is no "false" branch to follow.
+
+            // from here, the size of the path and stack will be the same, but
+            // when we return, the stack should always be one longer than the path.
+            // maybe i can enforce this in the type somehow
             bt_stack.pop_back();
+
+            // const bool path_end = bt_path.back();
+            
+            if (bt_stack.empty()) throw std::logic_error("oh noez");
+            //  "we are coming from the right" || "we came from the left but there's nothing on the right"
             while (bt_path.back() == false || !(bt_stack.back()->bfalse)) {
-                if (bt_path.size() == 1 && bt_path.back() == false) {
-                    // we just returned to the root, we are done.
+                // cout << "iterating" << endl;
+                // print_vector(bt_path);
+                // print_vector(bt_stack);
+                if (bt_stack.empty()) throw std::logic_error("oh noez");
+                if (bt_path.size() == 1) {
+                    // we just got to the top
+                    if (bt_path.back() == false) {
+                        // we got here from the right, which means we are finished. we want to return "end",
+                        // which is the empty path and the root node.
+                        bt_path.pop_back();
+                        return *this;
+                    }
+                    // we got here from the left
+                    if (bt_stack.back()->bfalse) {
+                        // we can go to the right
+                        // replace the end of the path with "false"
+                        bt_path.pop_back();
+                        bt_path.push_back(false);
+                        // add the right path to the end of the stack, and then "find_first" to get its first leaf
+                        bt_stack.push_back(bt_stack.back()->bfalse);
+                        find_first();
+                        return *this;
+                    }
+                    // we can't go to the right, so we are at the end.
                     bt_path.pop_back();
-                    return BTIterator(bt_path, bt_stack);
+                    return *this;
                 }
+                // otherwise, we just move up one
                 bt_path.pop_back();
                 bt_stack.pop_back();
+                // if (bt_path.size() == 1 && bt_path.back() == true) {
+                //     // we just returned to the root, we are done.
+                //     bt_path.pop_back();
+                //     return BTIterator(bt_path, bt_stack);
+                // }
+                // bt_path.pop_back();
+                // bt_stack.pop_back();
             }
+            // we got here, which means we can now go down the right-hand path
             bt_path.pop_back();
             bt_path.push_back(false);
             bt_stack.push_back(bt_stack.back()->bfalse);
@@ -136,9 +212,21 @@ public:
             return *this;
         };
 
-        bool operator!=(const BTIterator& rhs) {
+        unsigned operator*() const {
+            return bt_stack.back()->get_rowid();
+        }
+
+        btree* get_btree() const {
+            return bt_stack.back();
+        }
+
+        bool operator!=(const BTIterator& rhs) const {
             return (bt_path != rhs.bt_path);
         };
+
+        const bool first_bit_of_path() const {
+            return bt_path.at(0);
+        }
 
     private:
         bpath bt_path;
@@ -149,9 +237,14 @@ public:
         return BTIterator(this);
     };
 
+    // private:
+        // BTIterator end_cache = BTIterator(this, false);
+
+    public:
     BTIterator end() {
-        bpath path;
+        // return end_cache;
         bstack stack;
+        bpath path;
         stack.push_back(this);
         return BTIterator(path, stack);
     };

@@ -55,6 +55,22 @@ void print_prefix(std::ostream& os, const bdd_dict_ptr dict, const finite_word_p
 
 string prefix_to_string(bdd_dict_ptr dict, finite_word_ptr fword) {
     stringstream out;
-    print_prefix(out, dict, fword);
+    bool first = true;
+    out << "[";
+    for (auto letter : *fword) {
+        if (first) first = false;
+        else out << ", ";
+        out << bdd_to_formula(letter, dict);
+    }
+    out << "]";
     return out.str();
+}
+
+//FIXME: this might be more efficient if we weren't using List, bit instead Vector.
+finite_word_ptr finite_word_append(finite_word_ptr prefix, bdd letter) {
+    finite_word_ptr new_word = make_finite_word();
+    for (bdd l : *prefix)
+        new_word->push_back(l);
+    new_word->push_back(letter);
+    return new_word;
 }

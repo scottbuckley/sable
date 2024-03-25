@@ -2,7 +2,7 @@
     "configurations": [
         {
             "name": "C/C++: clang build and debug active file",
-            "type": "cppdbg",
+            "type": "lldb",
             "request": "launch",
             "program": "${fileDirname}/${fileBasenameNoExtension}",
             "args": [],

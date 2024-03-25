@@ -1,46 +1,49 @@
+/*
+    Note: this is build for universal cobuchi automaton, and further assumes that
+    all accepting states are sink states. As soon as any accepting state is hit, we
+    consider the word to be accepting (and therefore not a member).
+*/
+
+
 #pragma once
 
 #include "common.hh"
 #include "kcobuchi.cc"
 #include "words.cc"
+#include "accepting_state_cache.cc"
 
 using namespace spot;
 using namespace std;
 
 #define print_path false
 
+// NOTE: we have that the letter "a & !b" satisfies the condition "a", but
+// we DO NOT HAVE that the letter "a" (which is not really a letter)
+// satisfies the condition "a & !b".
 inline bool letter_satisfies_cond(const bdd & letter, const bdd & cond) {
-    return (bdd_apply(letter, cond, bddop_imp) == bddtrue);
+    // cout << "letter: " << letter << ", cond: " << cond << " = ";
+    const bool result = bdd_apply(letter, cond, bddop_imp) == bddtrue;
+    // cout << result << endl;
+    return (result);
 }
 
+//TODO: change this to a bool vector of the number of states in the graph. that would be faster.
 typedef std::unordered_set<unsigned> walk_position;
 
 class UCBWalker {
 private:
     twa_graph_ptr g;
+    AcceptingStateCache accepting_state_cache;
     walk_position cur_states;
     walk_position temp_cur_states;
     bool has_failed = false;
-    std::vector<bool> accepting_state_cache;
 
-    bool check_accepting_state_nocache(const unsigned state) const {
-        for (auto& t: g->out(state)) {
-            for (auto v: t.acc.sets())
-                return true;
-            break;
-        }
-        return false;
-    }
-
-    void init_accepting_state_cache() {
-        accepting_state_cache.resize(g->num_states(), false);
-        for (unsigned i=0; i<g->num_states(); ++i) {
-            accepting_state_cache[i] = check_accepting_state_nocache(i);
-        }
-    }
-
-    const inline bool is_accepting_state(const unsigned state) {
-        return accepting_state_cache[state];
+    // if we hit an accepting state, there's no point keeping track of anything else.
+    // so we just set the cur_states list to be only the failing state.
+    void mark_failed_at_state(unsigned state) {
+        cur_states.clear();
+        cur_states.insert(state);
+        has_failed = true;
     }
 
     // return true (and abort) if you hit an accepting state
@@ -50,11 +53,17 @@ private:
             for (auto edge : g->out(state)) {
                 if (letter_satisfies_cond(letter, edge.cond)) {
                     if (!g->is_univ_dest(edge.dst)) {
-                        if (is_accepting_state(edge.dst)) return true;
+                        if (accepting_state_cache.accepting(edge.dst)) {
+                            mark_failed_at_state(edge.dst);
+                            return true;
+                        }
                         temp_cur_states.insert(edge.dst);
                     } else {
                         for (auto d : g->univ_dests(edge.dst)) {
-                            if (is_accepting_state(d)) return true;
+                            if (accepting_state_cache.accepting(d)) {
+                                mark_failed_at_state(d);
+                                return true;
+                            }
                             temp_cur_states.insert(d);
                         }
                     }
@@ -72,14 +81,29 @@ private:
                 return true;
         return false;
     }
+
+    bool check_if_failed() {
+        for (unsigned s : cur_states) {
+            if (accepting_state_cache.accepting(s)) {
+                has_failed = true;
+                return true;
+            }
+        }
+        has_failed = false;
+        return false;
+    }
 public:
-    UCBWalker(twa_graph_ptr g) {
-        this->g = g;
-        const unsigned init_state = g->get_init_state_number();
-        cur_states.insert(init_state);
-        init_accepting_state_cache();
+    void reset() {
+        // initialise the set of current states to just the initial state.
+        cur_states.clear();
+        cur_states.insert(g->get_init_state_number());
+        
         // if the initial state is accepting, we have already failed.
-        has_failed = is_accepting_state(init_state);
+        check_if_failed();
+    }
+
+    UCBWalker(twa_graph_ptr g) : g{g}, accepting_state_cache(g) {
+        reset();
     }
 
     bool failed() {
@@ -87,12 +111,26 @@ public:
     }
 
     bool step(const bdd & letter) {
-        if (has_failed) throw std::logic_error("you can't continue stepping after you have hit an accepting state.");
+        // if (has_failed) throw std::logic_error("you can't continue stepping after you have hit an accepting state.");
+        if (has_failed) return true;
+        return (has_failed = try_step(letter));
+    }
+
+    // take a step, but talk loudly about it while you do it
+    bool step_verbose(const bdd & letter) {
+        if (has_failed) {
+            cout << "wanted to take a step, but we have already failed";
+            return true;
+        }
+        cout << "about to take step with letter " << letter << endl;
+        cout << "current states: "; print_vector(cur_states);
+        
         return (has_failed = try_step(letter));
     }
 
     bool walk(finite_word_ptr word) {
-        if (has_failed) throw std::logic_error("you can't continue stepping after you have hit an accepting state.");
+        // if (has_failed) throw std::logic_error("you can't continue stepping after you have hit an accepting state.");
+        if (has_failed) return true;
         if (try_walk(word)) {
             has_failed = true;
             return true;
@@ -100,82 +138,16 @@ public:
         return false;
     }
 
-    void reset() {
-        has_failed = is_accepting_state(g->get_init_state_number());
-        cur_states.clear();
-    }
-
     // store the current configuration to be later restored.
     walk_position get_position() {
-        if (has_failed) {
-            throw std::logic_error("you can't save a position after hitting an accepting state.");
-        } else {
-            return cur_states;
-        }
+        return cur_states;
     }
 
     void set_position(walk_position new_position) {
-        // if (cur_states_stored.empty()) throw std::logic_error("you can't load a position before saving one.");
         cur_states = new_position;
-        has_failed = false;
+        check_if_failed();
     }
 };
-
-// given a universal cobuchi graph, execute the given word's prefix, and
-// return whether it ended up on an accepting state.
-// if single_failure is true, it will fail as soon as it hits an accepting state.
-// bool fword_hits_accepting(twa_graph_ptr g, finite_word_ptr fword) {
-//     std::vector<unsigned> path_to_accepting_state;
-
-//     function<bool(unsigned, finite_word::iterator, finite_word::iterator)> run_from
-//     = [&](unsigned state, finite_word::iterator wordbegin, finite_word::iterator wordend) {
-
-//         // if we hit an accepting state, return true
-//         if (is_accepting_state(g, state)) {
-//             // cout << "!! hit an accepting state !! " << state << endl;
-//             if (print_path) path_to_accepting_state.push_back(state);
-//             return true;
-//         }
-//         // we reached the end
-//         if (wordbegin == wordend) {
-//             // cout << "!! got to the end of the word!" << endl;
-//             return false;
-//         }
-
-//         bdd letter = *wordbegin;
-//         ++wordbegin; // now start looking at the rest of the word.
-
-//         for (auto e : g->out(state)) {
-//             if (letter_satisfies_cond(letter, e.cond)) {
-//                 if (!g->is_univ_dest(e.dst)) {
-//                     if (run_from(e.dst, wordbegin, wordend)) {
-//                         if (print_path) path_to_accepting_state.push_back(state);
-//                         return true;
-//                     }
-//                 } else {
-//                     for (auto d : g->univ_dests(e.dst))
-//                         if (run_from(d, wordbegin, wordend)) {
-//                             if (print_path) path_to_accepting_state.push_back(state);
-//                             return true;
-//                         }
-//                 }
-//             }
-//         }
-//         return false;
-//     };
-
-//     if (run_from(g->get_init_state_number(), fword->begin(), fword->end())) {
-//         if (print_path) {
-//             cout << "path to accepting state: ";
-//             for (auto it = path_to_accepting_state.rbegin(); it != path_to_accepting_state.rend(); ++it) { 
-//                 cout << *it << " "; 
-//             } 
-//             cout << endl;
-//         }
-//         return true;
-//     }
-//     return false;
-// }
 
 // check a simple word
 bool member(finite_word_ptr fword, twa_graph_ptr g) {

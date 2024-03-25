@@ -1,0 +1,31 @@
+<html><head>
+<link rel="stylesheet" href="style.css">
+</head><body>
+<h1>Sable Debug</h1>
+<p><b>LTL: </b>G(a -> (Xb -> XX!a)) & GFb</p>
+<p><b>&not;LTL: </b>!(G(a -> (Xb -> XX!a)) & GFb)</p>
+<p><b>AP Map: </b>[1, 0]
+</p>
+<div><p><b>NonDet Buchi of negated LTL:</b><br><img src="graph_1.png"></p></div>
+<div><p><b>Universal CoBuchi of LTL:</b><br><img src="graph_2.png"></p></div>
+<div><p><b>Expanded K-CoBuchi for K=0:</b><br><img src="graph_3.png"></p></div>
+<p>Beginning LSafe.</p>
+<div><p><b>kUCB complement:</b><br><img src="graph_4.png"></p></div>
+<p>The empty word is accepted.</p>
+<h2>LSafe iteration #1</h2>
+<p>Closing table ...</p>
+<div class='codeblock'><p><b>Hypothesis table:</b></p><pre><code>True:
+.  Leaf: 0
+False:
+.  Leaf: 1
+
+P:
+ - []
+ - [!a & !b]
+S:
+ - []
+</code></pre></div><div><p><b>Hypothesis graph:</b><br><img src="graph_5.png"></p></div>
+<p>Hypothesis is realisable.</p>
+<div><p><b>Strategy:</b><br><img src="graph_6.png"></p></div>
+<div><p><b>Mealy machine:</b><br><img src="graph_7.png"></p></div>
+<p><b>Counterexample: </b>cycle{a & b}</p>
