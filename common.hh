@@ -64,3 +64,9 @@ string force_string(T v) {
     out << v;
     return out.str();
 }
+
+string to_string(formula f) {
+    stringstream x;
+    x << f;
+    return x.str();
+}

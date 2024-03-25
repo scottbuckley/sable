@@ -299,6 +299,19 @@ void complete_coBuchi_here(twa_graph_ptr g) {
     bool trap_state_created = false;
     unsigned trap_state;
 
+    // if the acceptance isn't all, the sink state might already exist - take a look
+    // and see if you can find it.
+    if (!acc.is_all()) {
+        const unsigned ns = g->num_states();
+        for (unsigned s=0; s<ns; ++s) {
+            if (is_accepting_state(g, s) && is_sink(g, s)) {
+                trap_state_created = true;
+                trap_state = s;
+                break;
+            }
+        }
+    }
+
     unordered_set<unsigned> visited;
     function<void(unsigned)> visit_state = [&](unsigned curstate) {
         if (visited.count(curstate) == 0) {
@@ -328,9 +341,8 @@ twa_graph_ptr dualize_to_univ_coBuchi(twa_graph_ptr g) {
     if (!acc.is_buchi())
         throw std::invalid_argument("input graph must use Buchi acceptance.");
     twa_graph_ptr dual = dualize(g);
-    acc = dual->get_acceptance();
-    if (acc.is_all())
-        complete_coBuchi_here(dual);
+    // dualize often creates incomplete graphs, so i explicitly complete the graph.
+    complete_coBuchi_here(dual);
     dual->prop_universal(1);
     return dual;
 }

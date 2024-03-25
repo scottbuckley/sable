@@ -8,6 +8,7 @@
 using namespace std;
 using namespace spot;
 
+/* not currently used - this was just used during testing
 twa_graph_ptr un_universalise(twa_graph_ptr input) {
     twa_graph_ptr output = make_twa_graph(input->get_dict());
     output->copy_acceptance_of(input);
@@ -29,7 +30,7 @@ twa_graph_ptr un_universalise(twa_graph_ptr input) {
     output->prop_universal(false);
     output->merge_edges();
     return output;
-}
+} */
 
 bdd apmap_mask (std::vector<bool> apmap, bdd_dict_ptr dict) {
     bdd mask = bddfalse;
@@ -69,6 +70,10 @@ twa_graph_ptr highlight_strategy_vec(twa_graph_ptr& aut, int player0_color, int 
     }
 
     return aut;
+}
+
+inline int bdd_compat(const bdd &l, const bdd &r) noexcept {
+    return (bdd_implies(l, r) || bdd_implies(r, l));
 }
 
 // solve the safety game on a graph where players' states are not separated; instead
@@ -111,6 +116,10 @@ bool solve_safety_ap_game(const twa_graph_ptr& game, std::vector<bool> & apmap) 
         if (!game->state_is_accepting(s)) {
             (*winners)[s] = false;
             dead_queue.push_back(s);
+            // mark any self-edges from this accepting dead state as part of the strategy.
+            for (auto & e : game->out(s)) if (e.dst == s) {
+                (*strategy)[s].insert(game->edge_number(e));
+            }
         }
     }
     
@@ -131,8 +140,9 @@ bool solve_safety_ap_game(const twa_graph_ptr& game, std::vector<bool> & apmap) 
             for (auto& e: transposed.out(s)) {
                 unsigned pred = e.dst;
                 if (pred == s) {
-                    // this is a self-edge on a dead state. include this in the strategy.
-                    (*strategy)[pred].insert(e.edgeidx);
+                    // we have a self-edge, so we mark it as being part of the dead border,
+                    // so that the self edge will possibly be included in the strategy.
+                    dead_border[pred] = true;
                 }
                 // if this edge comes from something already marked as dead, don't worry about it.
                 if (!(*winners)[pred]) continue;
@@ -161,14 +171,14 @@ bool solve_safety_ap_game(const twa_graph_ptr& game, std::vector<bool> & apmap) 
             // cout << "unsafe:" << bdd_to_formula(unsafe_cond, game->get_dict()) << endl;
             if (unsafe_cond != bddfalse) {
                 // this means there is some input that has no edges to safe states.
-                // cout << "  - safe edges do not cover all inputs. unsafe input: " << unsafe_cond << endl;
+                // cout << "  - safe edges from " << s << " do not cover all inputs. unsafe input: " << bdd_to_formula(unsafe_cond, game->get_dict()) << endl;
                 (*winners)[s] = false;
                 dead_queue.push_back(s);
 
                 // now mark that we would take any outgoing edge that has these inputs
                 for (auto& e: game->out(s)) {
                     if (!(*winners)[e.dst]) {
-                        if (bdd_implies(unsafe_cond, e.cond)) {
+                        if (bdd_compat(unsafe_cond, e.cond)) {
                             (*strategy)[s].insert(game->edge_number(e));
                         }
                     }

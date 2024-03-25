@@ -169,11 +169,19 @@ inline bdd complete_letter(bdd letter, bdd varset) {
     return bdd_satoneset(letter, varset, bddtrue);
 }
 
-void fully_specify_word(twa_word_ptr word, bdd & varset) {
-    for (bdd & letter : word->prefix)
-        letter = complete_letter(letter, varset);
-    for (bdd & letter : word->cycle)
-        letter = complete_letter(letter, varset);
+bool fully_specify_word(twa_word_ptr word, bdd & varset) {
+    bool change_made = false;
+    for (bdd & letter : word->prefix) {
+        bdd newletter = complete_letter(letter, varset);
+        if (newletter != letter) change_made = true;
+        letter = newletter;
+    }
+    for (bdd & letter : word->cycle) {
+        bdd newletter = complete_letter(letter, varset);
+        if (newletter != letter) change_made = true;
+        letter = newletter;
+    }
+    return change_made;
 }
 
 // this assumes that the given counterexample is in fact a counterexample, so it will
@@ -188,13 +196,57 @@ finite_word_ptr find_shortest_failing_prefix(twa_graph_ptr g, twa_word_ptr count
     for (unsigned i=0; i<longest_counterexample; i++) {
         for (bdd & letter : counterexample->cycle) {
             out->push_back(letter);
-            if (walker.step_verbose(letter)) return out;
+            if (walker.step(letter)) return out;
         }
     }
     throw std::runtime_error("we didnt' find a counterexample after " + to_string(longest_counterexample) + " steps. something wrong here?");
 }
 
-void Lsafe(twa_graph_ptr kucb, ap_map apmap) {
+twa_graph_ptr get_buchi(formula ltl) {
+    translator trans;
+    trans.set_type(postprocessor::Buchi);
+    trans.set_level(postprocessor::Low); // stopping optimisation for now
+    trans.set_pref(postprocessor::SBAcc + postprocessor::Complete);
+    twa_graph_ptr aut = trans.run(ltl);
+    return aut;
+}
+
+std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap);
+
+void LSafe(formula ltl, ap_map apmap) {
+
+    const unsigned k = 3;
+
+    formula ltl_neg = formula::Not(ltl);
+    page_text(to_string(ltl_neg), "&not;LTL");
+
+    twa_graph_ptr buchi_neg = get_buchi(ltl_neg);
+    page_graph(buchi_neg, "NonDet Buchi of negated LTL");
+
+    twa_graph_ptr cobuchi = dualize_to_univ_coBuchi(buchi_neg);
+    page_graph(cobuchi, "Universal CoBuchi of LTL");
+    
+    twa_graph_ptr kcobuchi = kcobuchi_expand(cobuchi, k);
+    page_graph(kcobuchi, "Expanded K-CoBuchi for K="+to_string(k));
+
+    auto [realisable, machine] = Lsafe_for_k(kcobuchi, apmap);
+    if (realisable) {
+        page_text("We have a solution for K = " + to_string(k));
+    } else {
+        page_text("We have a proof of unrealisability for K = " + to_string(k));
+        twa_word_ptr counterexample = machine->intersecting_word(buchi_neg);
+        if (word_not_empty(counterexample)) {
+            page_text("However this is not a proof for the general formula. We need to increment K.");
+            page_text(force_string(*counterexample), "Counterexample");
+            page_text("TODO.");
+        } else {
+            page_text("This is also a proof for the general formula. We have proven the specification to be unrealisable.");
+        }
+    }
+}
+
+// perform LSafe for some kucb.
+std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap) {
     if (!is_reasonable_ucb(kucb)) throw invalid_argument("provided graph must be a UCB.");
     page_text("Beginning LSafe.");
 
@@ -384,7 +436,10 @@ void Lsafe(twa_graph_ptr kucb, ap_map apmap) {
 
             twa_word_ptr counterexample = machine->intersecting_word(kucb_complement);
             if (word_not_empty(counterexample)) {
-                fully_specify_word(counterexample, varset);
+                string orig_counterexample_string = force_string(*counterexample);
+                if (fully_specify_word(counterexample, varset)) {
+                    page_text(orig_counterexample_string, "Original (symbolic) counterexample");
+                }
                 page_text(force_string(*counterexample), "Counterexample");
                 finite_word_ptr finite_counterexample = find_shortest_failing_prefix(kucb, counterexample);
                 page_text(prefix_to_string(dict, finite_counterexample), "Shortest finite counterexample");
@@ -412,11 +467,14 @@ void Lsafe(twa_graph_ptr kucb, ap_map apmap) {
             if (word_not_empty(counterexample)) {
                 // fully_specify_word(counterexample, varset);
                 page_text(force_string(*counterexample), "Counterexample");
-                finite_word_ptr finite_counterexample = find_shortest_failing_prefix(kucb, counterexample);
-                page_text(prefix_to_string(dict, finite_counterexample), "Shortest finite counterexample");
+                page_text("todo: find counterexample against hypothesis here");
+                // finite_word_ptr finite_counterexample = find_shortest_failing_prefix(h, counterexample);
+                // page_text(prefix_to_string(dict, finite_counterexample), "Shortest finite counterexample");
             } else {
-                page_text("No counterexample found. I guess we are done?");
-                break;
+                page_text("No counterexample found. For this K, the formula is not realisable.");
+                // now we check in general, to see if it's a total counterexample or if we need to
+                // increment K.
+                return {false, machine};
             }
 
             page_text("todo: complete this logic");

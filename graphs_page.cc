@@ -15,6 +15,11 @@ using namespace spot;
 
 
 
+string generate_graph_dot(twa_graph_ptr g) {
+    stringstream out;
+    print_dot(out, g, "arf(Lato)C(#ffffaa)b");
+    return out.str();
+}
 
 void generate_graph_image(twa_graph_ptr g, bool render_via_cmd, string name = "graph") {
     ofstream outdata;
@@ -34,7 +39,21 @@ void page_start(string heading = "") {
     page.open("page/index.html");
     page << "<html><head>" << endl;
     page << "<link rel=\"stylesheet\" href=\"style.css\">" << endl;
+    page << "<script src=\"viz-standalone.js\"></script>" << endl;
+    page << "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">"
+            "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>"
+            "<link href=\"https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap\" rel=\"stylesheet\">" << endl;
     page << "</head><body>" << endl;
+
+    page << "<script>"
+        "var vizInst = Viz.instance();"
+        "function render(id, dot) {"
+            "vizInst.then(function(viz){"
+                "document.getElementById(id).appendChild(viz.renderSVGElement(dot));"
+            "});"
+        "};"
+    "</script>";
+
     if (heading.length() > 0)
         page << "<h1>" << heading << "</h1>" << endl;
 }
@@ -47,10 +66,13 @@ void page_finish() {
 unsigned nameindex = 1;
 void page_graph(twa_graph_ptr g, string description) {\
     string name = "graph_" + to_string(nameindex++);
-    generate_graph_image(g, true, "page/"+name);
+    string dot = generate_graph_dot(g);
     page << "<div>";
     page << "<p><b>" << description << ":</b><br>";
-    page << "<img src=\"" << name << ".png\">";
+    page << "<span class=\"graphviz-graph\" id=\"" << name << "\"></span>" << endl;
+    page << "<script>"
+            "render('" + name + "', `" + dot + "`);"
+            "</script>";
     page << "</p>";
     page << "</div>" << endl;
 }
