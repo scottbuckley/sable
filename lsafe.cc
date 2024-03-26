@@ -7,7 +7,7 @@
 #include <spot/twaalgos/complement.hh>
 #include <spot/twaalgos/complete.hh>
 
-#define longest_counterexample 100
+#define longest_counterexample 1000
 // #include <spot/twa/bdddict.hh>
 
 /*
@@ -116,8 +116,8 @@ string dump_lsafe_state(bdd_dict_ptr dict, std::vector<prefix> P, std::vector<su
     stringstream out;
     tbl->print(out);
     out << endl << "P:" << endl;
-    for (prefix p : P) {
-        out << " - " << prefix_to_string(dict, p) << endl;
+    for (unsigned i=0; i<P.size(); ++i) {
+        out << " (" << i << ") " << prefix_to_string(dict, P[i]) << endl;
     }
     out << "S:" << endl;
     for (prefix s : S) {
@@ -215,7 +215,7 @@ std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap);
 
 void LSafe(formula ltl, ap_map apmap) {
 
-    const unsigned k = 3;
+    const unsigned max_k = 10;
 
     formula ltl_neg = formula::Not(ltl);
     page_text(to_string(ltl_neg), "&not;LTL");
@@ -226,29 +226,40 @@ void LSafe(formula ltl, ap_map apmap) {
     twa_graph_ptr cobuchi = dualize_to_univ_coBuchi(buchi_neg);
     page_graph(cobuchi, "Universal CoBuchi of LTL");
     
-    twa_graph_ptr kcobuchi = kcobuchi_expand(cobuchi, k);
-    page_graph(kcobuchi, "Expanded K-CoBuchi for K="+to_string(k));
 
-    auto [realisable, machine] = Lsafe_for_k(kcobuchi, apmap);
-    if (realisable) {
-        page_text("We have a solution for K = " + to_string(k));
-    } else {
-        page_text("We have a proof of unrealisability for K = " + to_string(k));
-        twa_word_ptr counterexample = machine->intersecting_word(buchi_neg);
-        if (word_not_empty(counterexample)) {
-            page_text("However this is not a proof for the general formula. We need to increment K.");
-            page_text(force_string(*counterexample), "Counterexample");
-            page_text("TODO.");
+    for (unsigned k=0; k<=max_k; ++k) {
+        cout << "Iterating with K = " << k << endl;
+        if (k == 0) page_heading("Starting with K = " + to_string(k));
+        else        page_heading("Incrementing K to " + to_string(k));
+
+        twa_graph_ptr kcobuchi = kcobuchi_expand(cobuchi, k);
+        page_graph(kcobuchi, "Expanded K-CoBuchi for K="+to_string(k));
+
+        auto [realisable, machine] = Lsafe_for_k(kcobuchi, apmap);
+        if (realisable) {
+            page_text("We have a solution for K = " + to_string(k));
+            page_text("todo");
+            return;
         } else {
-            page_text("This is also a proof for the general formula. We have proven the specification to be unrealisable.");
+            page_text("We have a proof of unrealisability for K = " + to_string(k));
+            twa_word_ptr counterexample = machine->intersecting_word(buchi_neg);
+            if (word_not_empty(counterexample)) {
+                page_text("However this is not a proof for the general formula. We need to increment K.");
+                page_text(force_string(*counterexample), "Counterexample");
+                continue;
+            } else {
+                page_text("This is also a proof for the general formula. We have proven the specification to be unrealisable.");
+                return;
+            }
         }
     }
+    page_text("We tried K up to " + to_string(max_k) + ", and didn't find any solution.", "Giving up");
+    cout << "K maxed out. giving up." << endl;
 }
 
 // perform LSafe for some kucb.
 std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap) {
     if (!is_reasonable_ucb(kucb)) throw invalid_argument("provided graph must be a UCB.");
-    page_text("Beginning LSafe.");
 
     const bdd_dict_ptr dict = kucb->get_dict();
     better_var_map_ptr bvm = get_better_var_map(dict);
@@ -296,7 +307,7 @@ std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap) {
     };
 
     function<twa_graph_ptr()> close_table = [&]() {
-        cout << "closing table (FROM SCRATCH - this should be made a lot sexier)" << endl;
+        // cout << "  closing table (FROM SCRATCH - this should be made a lot sexier)" << endl;
         
         // take a look at each row, and see if it can "step" into another row after one letter.
         twa_graph_ptr H = make_twa_graph(dict);
@@ -415,9 +426,7 @@ std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap) {
         }
 
         page_heading("LSafe iteration #" + to_string(i));
-        cout << "##################################" << endl;
-        cout << "###  LSAFE ITERATION   " << i << "       ###" << endl;
-        cout << "##################################" << endl;
+        cout << "  LSafe Iteration " << i << endl;
         // close the table
         // dump_lsafe_state(dict, P, S, tbl);
         page_text("Closing table ...");
