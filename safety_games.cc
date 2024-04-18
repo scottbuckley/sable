@@ -33,12 +33,10 @@ twa_graph_ptr un_universalise(twa_graph_ptr input) {
 } */
 
 bdd apmap_mask (std::vector<bool> apmap, bdd_dict_ptr dict) {
-    bdd mask = bddfalse;
-    unsigned i = 0;
+    bdd mask = bddtrue;
     for (auto [f, idx] : dict->var_map) {
-        if (!apmap[i])
-            mask |= bdd_ithvar(idx);
-        ++i;
+        if (apmap[idx])
+            mask &= bdd_ithvar(idx);
     }
     return mask;
 }
@@ -82,14 +80,14 @@ inline int bdd_compat(const bdd &l, const bdd &r) noexcept {
 // that for each transition, the system has a chance to react to the input to choose an output.
 // note: this version assumes that all edges are minimal unique AP configurations (as would be
 // generated from an L*-style table), and that they are also input and output complete.
-bool solve_safety_ap_game(const twa_graph_ptr& game, std::vector<bool> & apmap) {
+bool solve_safety_ap_game(const twa_graph_ptr& game, std::vector<bool> & apmap, bool verbose = false) {
     if (game->prop_universal()) {
         // we ain't work with universal automata
         throw std::runtime_error ("solve_safety_ap_game(): arena should not be universal");
     }
 
     auto apmask = apmap_mask(apmap, game->get_dict());
-    // cout << "ap mask: " << apmask << endl;
+    // cout << "ap mask: " << bdd_to_formula(apmask, game->get_dict()) << endl;
 
     const unsigned ns = game->num_states();
     auto winners = new region_t(ns, true);
@@ -151,6 +149,7 @@ bool solve_safety_ap_game(const twa_graph_ptr& game, std::vector<bool> & apmap) 
             }
         }
         
+        // go through the border
         for (unsigned s=0; s<ns; ++s) if (dead_border[s] && (*winners)[s]) {
             // now we need to consider if the system can make a choice that
             // avoids a dead state. we now consider the edges from this state (NOT the transposed edges)
@@ -159,15 +158,20 @@ bool solve_safety_ap_game(const twa_graph_ptr& game, std::vector<bool> & apmap) 
             for (auto& e: game->out(s)) {
                 if ((*winners)[e.dst]) {
                     // cout << "  - edge to " << succ << endl;
-                    // cout << "    - cond: " << bdd_exist(e.cond, apmask) << endl;
                     unsafe_cond -= e.cond;
                     // cout << "away edge: " << bdd_to_formula(e.cond, game->get_dict()) << endl;
-                    // cout << "    - total cond so far: " << unsafe_cond << endl;
+                    if (verbose) {
+                        cout << "    - cond: " << bdd_to_formula(e.cond, game->get_dict()) << endl;
+                        cout << "    - total cond so far: " << bdd_to_formula(unsafe_cond, game->get_dict()) << endl;
+                    }
                 }
             }
             // we are only looking at the input APs
             // cout << "unsafe:" << bdd_to_formula(unsafe_cond, game->get_dict()) << endl;
-            unsafe_cond = bdd_forall(unsafe_cond, apmask);
+            unsafe_cond = bdd_forallcomp(unsafe_cond, apmask);
+            if (verbose) {
+                cout << "    - final total cond: " << bdd_to_formula(unsafe_cond, game->get_dict()) << endl;
+            }
             // cout << "unsafe:" << bdd_to_formula(unsafe_cond, game->get_dict()) << endl;
             if (unsafe_cond != bddfalse) {
                 // this means there is some input that has no edges to safe states.
@@ -379,10 +383,10 @@ twa_graph_ptr get_strategy_machine(twa_graph_ptr input) {
     return output;
 }
 
-std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, ap_map apmap) {
+std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, ap_map apmap, bool verbose = false) {
     bdd_dict_ptr dict = g->get_dict();
     
-    const bool winning = solve_safety_ap_game(g, apmap);
+    const bool winning = solve_safety_ap_game(g, apmap, verbose);
 
     twa_graph_ptr machine = get_strategy_machine(g);
     machine->merge_edges();

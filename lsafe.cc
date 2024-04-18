@@ -6,6 +6,7 @@
 #include "safety_games.cc"
 #include <spot/twaalgos/complement.hh>
 #include <spot/twaalgos/complete.hh>
+#include "time.cc"
 
 #define longest_counterexample 1000
 // #include <spot/twa/bdddict.hh>
@@ -211,55 +212,138 @@ twa_graph_ptr get_buchi(formula ltl) {
     return aut;
 }
 
-std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap);
-
-void LSafe(formula ltl, ap_map apmap) {
-
-    const unsigned max_k = 10;
-
-    formula ltl_neg = formula::Not(ltl);
-    page_text(to_string(ltl_neg), "&not;LTL");
-
-    twa_graph_ptr buchi_neg = get_buchi(ltl_neg);
-    page_graph(buchi_neg, "NonDet Buchi of negated LTL");
-
-    twa_graph_ptr cobuchi = dualize_to_univ_coBuchi(buchi_neg);
-    page_graph(cobuchi, "Universal CoBuchi of LTL");
+ap_map make_ap_map(std::vector<string> input_aps, spot::bdd_dict_ptr dict) {
+    auto x = dict->var_map;
+    unsigned max_bdd_index = 0;
     
+    for (auto [a, b] : x) if (b > max_bdd_index) max_bdd_index = b;
+
+    ap_map apmap = ap_map(max_bdd_index+1, false);
+
+    for (auto [formula, varnum] : x) {
+        // std::cout << formula << ", " << varnum << endl;
+        string bdd_var_string = force_string(formula);
+        if (std::any_of(input_aps.begin(), input_aps.end(), [bdd_var_string](string s){return s==bdd_var_string;})) {
+            apmap[varnum] = true;
+        }
+    }
+    // print_vector(apmap);
+    return apmap;
+}
+
+std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap, unsigned k, twa_graph_ptr buchi_neg, StopwatchSet timers);
+
+
+
+void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
+
+    auto make_timer = [&timers](string lbl, bool start = false) {
+        Stopwatch * new_timer = new Stopwatch(lbl);
+        timers.addTimer(new_timer);
+        if (start) new_timer->start();
+        return new_timer;
+    };
+
+    auto block_timer = [&timers](string lbl, auto x) {
+        Stopwatch * new_timer = new Stopwatch(lbl);
+        timers.addTimer(new_timer);
+        new_timer->start();
+        x();
+        new_timer->stop();
+    };
+
+    auto global_lsafe = make_timer("LSafe total", true);
+    StopOnReturn rr1 = StopOnReturn(global_lsafe);
+
+
+    auto init_timer = make_timer("initialisation", true);
+        const unsigned max_k = 5;
+        formula ltl_neg = formula::Not(ltl);
+        twa_graph_ptr buchi_neg = get_buchi(ltl_neg);
+        twa_graph_ptr cobuchi = dualize_to_univ_coBuchi(buchi_neg);
+        ap_map apmap = make_ap_map(input_aps, cobuchi->get_dict());
+    init_timer->stop();
+
+
+
+
+
+    // global timer that will stop when this function terminates
+
+    auto global_closing_timer = make_timer("Table closing");
+    auto k_expansion_timer = make_timer("K expansion");
+    auto lsafe_for_k_timer = make_timer("lsafe_for_k_calls");
+    auto inclusion_timer = make_timer("Inclusion Checks");
+    auto game_solving_timer = make_timer("Safety Game Solving");
+
+
+    #if GEN_PAGE_BASIC
+    page_text(to_string(ltl), "LTL");
+    page_text(to_string(input_aps), "Input APs");
+    page_text(to_string(ltl_neg), "&not;LTL");
+    page_graph(buchi_neg, "NonDet Buchi of negated LTL");
+    page_graph(cobuchi, "Universal CoBuchi of LTL");
+    #endif
 
     for (unsigned k=0; k<=max_k; ++k) {
         cout << "Iterating with K = " << k << endl;
+        k_expansion_timer->start();
+        twa_graph_ptr kcobuchi = kcobuchi_expand(cobuchi, k);
+        k_expansion_timer->stop();
+        cout << "kcobuchi state count: " << kcobuchi->num_states() << endl;
+        
+        #if GEN_PAGE_DETAILS
         if (k == 0) page_heading("Starting with K = " + to_string(k));
         else        page_heading("Incrementing K to " + to_string(k));
-
-        twa_graph_ptr kcobuchi = kcobuchi_expand(cobuchi, k);
         page_graph(kcobuchi, "Expanded K-CoBuchi for K="+to_string(k));
+        #endif
 
-        auto [realisable, machine] = Lsafe_for_k(kcobuchi, apmap);
+        lsafe_for_k_timer->start();
+        auto [realisable, machine] = Lsafe_for_k(kcobuchi, apmap, k, buchi_neg, timers);
+        lsafe_for_k_timer->stop();
         if (realisable) {
-            page_text("We have a solution for K = " + to_string(k));
-            page_text("todo");
+            #if GEN_PAGE_DETAILS
+            page_text("We have a solution for K = " + to_string(k) + ".");
+            #endif
+            cout << "we have a solution" << endl;
             return;
         } else {
-            page_text("We have a proof of unrealisability for K = " + to_string(k));
+            inclusion_timer->start();
             twa_word_ptr counterexample = machine->intersecting_word(buchi_neg);
+            inclusion_timer->stop()->report()->reset();
             if (word_not_empty(counterexample)) {
+                #if GEN_PAGE_DETAILS
+                page_text("We have a proof of unrealisability for K = " + to_string(k));
                 page_text("However this is not a proof for the general formula. We need to increment K.");
                 page_text(force_string(*counterexample), "Counterexample");
+                #endif
                 continue;
             } else {
+                #if GEN_PAGE_DETAILS
+                page_text("We have a proof of unrealisability for K = " + to_string(k));
                 page_text("This is also a proof for the general formula. We have proven the specification to be unrealisable.");
+                #endif
                 return;
             }
         }
     }
+    #if GEN_PAGE_BASIC
     page_text("We tried K up to " + to_string(max_k) + ", and didn't find any solution.", "Giving up");
+    #endif
     cout << "K maxed out. giving up." << endl;
 }
 
 // perform LSafe for some kucb.
-std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap) {
+std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap, unsigned k, twa_graph_ptr buchi_neg, StopwatchSet timers) {
     if (!is_reasonable_ucb(kucb)) throw invalid_argument("provided graph must be a UCB.");
+
+    Stopwatch * closing_total = timers.getTimer("Table closing");
+    Stopwatch * inclusion_total = timers.getTimer("Inclusion Checks");
+    Stopwatch * solving_total = timers.getTimer("Safety Game Solving");
+
+    auto closing_timer = new Stopwatch("Table Closing Instance", closing_total);
+    auto inclusion_timer = new Stopwatch("Inclusion Check Instance", inclusion_total);
+    auto solving_timer = new Stopwatch("Safety Game Solving Instance", solving_total);
 
     const bdd_dict_ptr dict = kucb->get_dict();
     better_var_map_ptr bvm = get_better_var_map(dict);
@@ -270,11 +354,13 @@ std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap) {
     const unsigned h_fin_set = 0;
 
     twa_graph_ptr kucb_complement = spot::complement(kucb);
-    page_graph(kucb_complement, "kUCB complement");
 
     const bool init_state_accepted = !walk.failed();
-    page_text_bool(init_state_accepted, "The empty word is accepted.", "The empty word is not accepted.");
 
+    #if GEN_PAGE_BASIC
+    page_graph(kucb_complement, "kUCB complement");
+    page_text_bool(init_state_accepted, "The empty word is accepted.", "The empty word is not accepted.");
+    #endif
 
     std::vector<prefix> P = {empty_word()}; // set of states (in terms of state consistency)
     std::vector<suffix> S = {empty_word()};; // set of separating suffixes
@@ -318,7 +404,7 @@ std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap) {
             // cout << "- considering prefix index = " << i << ", word = " << prefix_to_string(dict, prefix) << endl;
             // tbl->print();
             auto new_state_num = H->new_state();
-            if (new_state_num != i) throw std::logic_error("the assumption that these states will have ids that align with my code here was obvbiously wrong");
+            if (new_state_num != i) throw std::logic_error("the assumption that these states will have ids that align with my code here was obviously wrong");
             walk.reset();
             walk.walk(prefix);
             if (!walk.failed()) {
@@ -419,79 +505,148 @@ std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap) {
     };
 
 
-    for (unsigned i=1; i<=10; i++) {
-        if (i==10) {
+    for (unsigned i=1; i<=100; i++) {
+        if (i==100) {
+            #if GEN_PAGE_DETAILS
             page_text("stopping at 10 iterations");
+            #endif
             cout << "stopping at 10 iterations" << endl;
         }
 
+        #if GEN_PAGE_DETAILS
         page_heading("LSafe iteration #" + to_string(i));
+        #endif
+
         cout << "  LSafe Iteration " << i << endl;
         // close the table
         // dump_lsafe_state(dict, P, S, tbl);
-        page_text("Closing table ...");
+        closing_timer->start();
         twa_graph_ptr h = close_table();
+        closing_timer->stop()->report("====")->reset();
+        #if GEN_PAGE_DETAILS
+        page_text("Closing table ...");
         page_code("Hypothesis table:", dump_lsafe_state(dict, P, S, tbl));
+        page_text(to_string(h->num_states()), "Number of states");
+        #endif
+        cout << "hypothesis number of states: " << h->num_states() << endl;
         // page_graph(h, "Hypothesis graph (unmerged)");
         // h->merge_edges();
-        page_graph(h, "Hypothesis graph");
+        // page_graph(h, "Hypothesis graph");
 
-        auto [realizable, machine] = solve_safety(h, apmap);
+        solving_timer->start();
+        auto [realizable, machine] = solve_safety(h, apmap, false);
+        solving_timer->stop()->report();
         if (realizable) {
-            page_text("Hypothesis is realisable.");
             highlight_strategy_vec(h, 5, 4);
+            #if GEN_PAGE_DETAILS
+            page_text("Hypothesis is realisable.");
             page_graph(h, "Strategy");
             page_graph(machine, "Mealy machine");
-
+            #endif
+            inclusion_timer->start();
             twa_word_ptr counterexample = machine->intersecting_word(kucb_complement);
+            inclusion_timer->stop()->report()->reset();
             if (word_not_empty(counterexample)) {
+                #if GEN_PAGE_DETAILS
                 string orig_counterexample_string = force_string(*counterexample);
                 if (fully_specify_word(counterexample, varset)) {
                     page_text(orig_counterexample_string, "Original (symbolic) counterexample");
                 }
                 page_text(force_string(*counterexample), "Counterexample");
+                #else
+                    fully_specify_word(counterexample, varset);
+                #endif
+
                 finite_word_ptr finite_counterexample = find_shortest_failing_prefix(kucb, counterexample);
+
+                #if GEN_PAGE_DETAILS
                 page_text(prefix_to_string(dict, finite_counterexample), "Shortest finite counterexample");
+                #endif
 
                 // ok im trying just adding the whole thing as a suffix, except the first letter.
                 // page_text("Right now we are adding the entire counterexample, minus its first letter, as a suffix.");
+                #if GEN_PAGE_DETAILS
                 page_text("Adding all suffixes of the counterexample to S.");
+                #endif
                 while (finite_counterexample->size()>1) {
                     finite_counterexample->pop_front();
                     // make a copy
                     extend_table_with_suffix(copy_word(finite_counterexample));
                 }
+                #if GEN_PAGE_DETAILS
                 page_code("Table after accounting for counterexample:", dump_lsafe_state(dict, P, S, tbl));
+                #endif
             } else {
-                page_text("No counterexample found. I guess we are done?");
-                break;
+                #if GEN_PAGE_DETAILS
+                page_text("No counterexample found. The mealy machine above satisfies the kUCB.");
+                page_text("Also checking against the UCB");
+                #endif
+                inclusion_timer->start();
+                twa_word_ptr new_counterexample = machine->intersecting_word(buchi_neg);
+                inclusion_timer->stop()->report()->reset();
+                if (word_not_empty(new_counterexample)) {
+                    #if GEN_PAGE_DETAILS
+                    page_text("OH NO PROBLEMS");
+                    #endif
+                } else {
+                    #if GEN_PAGE_DETAILS
+                    page_text("Also passed the Buchi test.");
+                    #endif
+                    cout << "sanity check passed" << endl;
+                }
+                return {true, machine};
             }
         } else {
+            #if GEN_PAGE_DETAILS
             page_text("Hypothesis is NOT realisable.");
             highlight_strategy_vec(h, 5, 4);
             page_graph(h, "Strategy");
             page_graph(machine, "Moore machine");
-
+            #endif
+            
+            inclusion_timer->start();
             twa_word_ptr counterexample = machine->intersecting_word(kucb);
+            inclusion_timer->stop()->report()->reset();
             if (word_not_empty(counterexample)) {
                 // fully_specify_word(counterexample, varset);
+                fully_specify_word(counterexample, varset);
+                finite_word_ptr finite_counterexample = find_shortest_failing_prefix(h, counterexample);
+
+                #if GEN_PAGE_DETAILS
                 page_text(force_string(*counterexample), "Counterexample");
-                page_text("todo: find counterexample against hypothesis here");
+                page_text(prefix_to_string(dict, finite_counterexample), "Shortest finite counterexample");
+                page_text("Adding all suffixes of the counterexample to S.");
+                #endif
+
+                while (finite_counterexample->size()>1) {
+                    finite_counterexample->pop_front();
+                    // make a copy
+                    extend_table_with_suffix(copy_word(finite_counterexample));
+                }
+                #if GEN_PAGE_DETAILS
+                page_code("Table after accounting for counterexample:", dump_lsafe_state(dict, P, S, tbl));
+                #endif
+
+                // page_text("todo: find counterexample against hypothesis here");
                 // finite_word_ptr finite_counterexample = find_shortest_failing_prefix(h, counterexample);
                 // page_text(prefix_to_string(dict, finite_counterexample), "Shortest finite counterexample");
+                
             } else {
+                #if GEN_PAGE_DETAILS
                 page_text("No counterexample found. For this K, the formula is not realisable.");
+                #endif
                 // now we check in general, to see if it's a total counterexample or if we need to
                 // increment K.
                 return {false, machine};
             }
 
-            page_text("todo: complete this logic");
-            break;
+            // page_text("todo: complete this logic");
+            // break;
         }
     }
 
-
+    // this shouldn't happen
+    return {false, nullptr};
     // generate_graph_image(h, true);
     // inclusion_query_etc(h);
 

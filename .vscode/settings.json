@@ -68,7 +68,11 @@
         "typeindex": "cpp",
         "functional": "cpp",
         "iterator": "cpp",
-        "memory": "cpp"
+        "memory": "cpp",
+        "forward_list": "cpp",
+        "valarray": "cpp",
+        "any": "cpp",
+        "shared_mutex": "cpp"
     },
     "lldb.displayFormat": "auto",
     "lldb.showDisassembly": "auto",

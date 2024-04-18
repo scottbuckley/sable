@@ -1,5 +1,8 @@
 #pragma once
 
+#define GEN_PAGE_BASIC 0
+#define GEN_PAGE_DETAILS 0
+#define GEN_PAGE_TIMER 1
 
 #include <spot/tl/parse.hh>
 #include <spot/tl/print.hh>
@@ -18,6 +21,11 @@ typedef std::vector<bool> ap_map;
 
 void debug(string msg) {
     cout << msg << '\n';
+}
+
+template <typename T>
+inline const bool vec_contains(vector<T> vec, T elem) {
+    return (std::find(vec.begin(), vec.end(), elem) != vec.end());
 }
 
 template<typename T>
