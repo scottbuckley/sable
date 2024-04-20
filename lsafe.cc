@@ -153,13 +153,13 @@ finite_word_ptr find_finite_counterexample(twa_graph_ptr machine, twa_graph_ptr 
     finite_word_ptr out = make_finite_word();
     for (bdd letter : counterexample->prefix) {
         out->push_back(letter);
-        if (walk_machine.step(letter) != walk_kucb.step(letter))
+        if (walk_machine.step_and_check_failed(letter) != walk_kucb.step_and_check_failed(letter))
             return out;
     }
     for (unsigned i=0; i<longest_counterexample; i++) {
         for (bdd letter : counterexample->cycle) {
             out->push_back(letter);
-            if (walk_machine.step(letter) != walk_kucb.step(letter))
+            if (walk_machine.step_and_check_failed(letter) != walk_kucb.step_and_check_failed(letter))
                 return out;
         }
     }
@@ -192,12 +192,12 @@ finite_word_ptr find_shortest_failing_prefix(twa_graph_ptr g, twa_word_ptr count
     finite_word_ptr out = make_finite_word();
     for (bdd & letter : counterexample->prefix) {
         out->push_back(letter);
-        if (walker.step(letter)) return out;
+        if (walker.step_and_check_failed(letter)) return out;
     }
     for (unsigned i=0; i<longest_counterexample; i++) {
         for (bdd & letter : counterexample->cycle) {
             out->push_back(letter);
-            if (walker.step(letter)) return out;
+            if (walker.step_and_check_failed(letter)) return out;
         }
     }
     throw std::runtime_error("we didnt' find a counterexample after " + to_string(longest_counterexample) + " steps. something wrong here?");
@@ -231,7 +231,7 @@ ap_map make_ap_map(std::vector<string> input_aps, spot::bdd_dict_ptr dict) {
     return apmap;
 }
 
-std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap, unsigned k, twa_graph_ptr buchi_neg, StopwatchSet timers);
+std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap, unsigned k, twa_graph_ptr buchi_neg, StopwatchSet timers, UCBWalker * walker_used);
 
 
 
@@ -275,6 +275,8 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     auto lsafe_for_k_timer = make_timer("lsafe_for_k_calls");
     auto inclusion_timer = make_timer("Inclusion Checks");
     auto game_solving_timer = make_timer("Safety Game Solving");
+    unsigned total_bad_membership_count = 0;
+    unsigned total_membership_letter_count = 0;
 
 
     #if GEN_PAGE_BASIC
@@ -298,9 +300,14 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
         page_graph(kcobuchi, "Expanded K-CoBuchi for K="+to_string(k));
         #endif
 
+        UCBWalker * ks_walker;
         lsafe_for_k_timer->start();
-        auto [realisable, machine] = Lsafe_for_k(kcobuchi, apmap, k, buchi_neg, timers);
+        auto [realisable, machine] = Lsafe_for_k(kcobuchi, apmap, k, buchi_neg, timers, ks_walker);
         lsafe_for_k_timer->stop();
+        total_bad_membership_count += ks_walker->get_bad_membership_count();
+        total_membership_letter_count += ks_walker->get_membership_letter_count();
+        ks_walker = nullptr;
+
         if (realisable) {
             #if GEN_PAGE_DETAILS
             page_text("We have a solution for K = " + to_string(k) + ".");
@@ -334,7 +341,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
 }
 
 // perform LSafe for some kucb.
-std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap, unsigned k, twa_graph_ptr buchi_neg, StopwatchSet timers) {
+std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap, unsigned k, twa_graph_ptr buchi_neg, StopwatchSet timers, UCBWalker * walker_used = nullptr) {
     if (!is_reasonable_ucb(kucb)) throw invalid_argument("provided graph must be a UCB.");
 
     Stopwatch * closing_total = timers.getTimer("Table closing");
@@ -349,8 +356,9 @@ std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap, un
     better_var_map_ptr bvm = get_better_var_map(dict);
     bdd varset = make_varset_bdd(bvm);
     alphabet_vec alphabet = alphabet_from_bvm(bvm);
-    unsigned letter_count = alphabet.size();
+    unsigned const letter_count = alphabet.size();
     UCBWalker walk = UCBWalker(kucb);
+    walker_used = &walk;
     const unsigned h_fin_set = 0;
 
     twa_graph_ptr kucb_complement = spot::complement(kucb);
@@ -369,28 +377,22 @@ std::tuple<bool, twa_graph_ptr> Lsafe_for_k(twa_graph_ptr kucb, ap_map apmap, un
     // which is true iff the kucb accepts the empty word
     btree * tbl = btreebool(init_state_accepted, 0);
 
-    // function<bool(prefix)> find_or_create_row = [&](prefix prefix) {
-    //     for (suffix suffix : T) {
-            
-    //     }
-    //     return false;
-    // };
-
     auto get_or_create_sink_row = [&]() {
-        // cout << "we found an empty row to create: " << i << endl;
-        // tbl->print();
         btree * cur_node = tbl;
         for (unsigned i=0; i<S.size(); ++i)
             cur_node = cur_node->force_false();
         return cur_node;
-        // if (cur_node->has_rowid()) {
-        //     // it already exists.
-        //     return cur_node->get_rowid();
-        // } else {
-        //     cur_node->set_rowid(id_if_creating);
-        //     return id_if_creating;
-        // }
     };
+
+    // struct PrefixTree {
+    //     std::vector<PrefixTree*> chren;
+    //     int equiv_row_in_P = -1;
+    //     walk_position * ucb_state = nullptr;
+
+    //     PrefixTree(unsigned letter_count) {
+    //         chren.resize(letter_count, nullptr);
+    //     }
+    // };
 
     function<twa_graph_ptr()> close_table = [&]() {
         // cout << "  closing table (FROM SCRATCH - this should be made a lot sexier)" << endl;

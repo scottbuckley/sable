@@ -30,6 +30,7 @@ inline bool letter_satisfies_cond(const bdd & letter, const bdd & cond) {
 //TODO: change this to a bool vector of the number of states in the graph. that would be faster.
 typedef std::unordered_set<unsigned> walk_position;
 
+
 class UCBWalker {
 private:
     twa_graph_ptr g;
@@ -37,6 +38,9 @@ private:
     walk_position cur_states;
     walk_position temp_cur_states;
     bool has_failed = false;
+
+    unsigned bad_membership_count = 0;
+    unsigned membership_letter_count = 0;
 
     // if we hit an accepting state, there's no point keeping track of anything else.
     // so we just set the cur_states list to be only the failing state.
@@ -48,6 +52,7 @@ private:
 
     // return true (and abort) if you hit an accepting state
     bool try_step(const bdd & letter) {
+        ++membership_letter_count;
         temp_cur_states.clear();
         for (unsigned state : cur_states) {
             for (auto edge : g->out(state)) {
@@ -107,13 +112,19 @@ public:
     }
 
     bool failed() {
+        ++bad_membership_count;
         return has_failed;
     }
 
-    bool step(const bdd & letter) {
+    void step(const bdd & letter) {
         // if (has_failed) throw std::logic_error("you can't continue stepping after you have hit an accepting state.");
-        if (has_failed) return true;
-        return (has_failed = try_step(letter));
+        if (has_failed) return;
+        has_failed = try_step(letter);
+    }
+
+    bool step_and_check_failed(const bdd & letter) {
+        step(letter);
+        return failed();
     }
 
     // take a step, but talk loudly about it while you do it
@@ -147,13 +158,21 @@ public:
         cur_states = new_position;
         check_if_failed();
     }
+
+    unsigned get_bad_membership_count() {
+        return bad_membership_count;
+    }
+
+    unsigned get_membership_letter_count() {
+        return membership_letter_count;
+    }
 };
 
 // check a simple word
 bool member(finite_word_ptr fword, twa_graph_ptr g) {
     UCBWalker * walk = new UCBWalker(g);
     for (auto l : *fword) {
-        if (walk->step(l)) return false;
+        if (walk->step_and_check_failed(l)) return false;
     }
     return true;
 }
@@ -161,10 +180,10 @@ bool member(finite_word_ptr fword, twa_graph_ptr g) {
 bool member(finite_word_ptr prefix, bdd middle, finite_word_ptr suffix, twa_graph_ptr g) {
     UCBWalker * walk = new UCBWalker(g);
     for (auto l : *prefix)
-        if (walk->step(l)) return false;
-    if (walk->step(middle)) return false;
+        if (walk->step_and_check_failed(l)) return false;
+    if (walk->step_and_check_failed(middle)) return false;
     for (auto l : *suffix)
-        if (walk->step(l)) return false;
+        if (walk->step_and_check_failed(l)) return false;
     return true;
 }
 
