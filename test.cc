@@ -6,6 +6,7 @@
 #include "lsafe.cc"
 #include "safety_games.cc"
 #include "getinput.cc"
+#include "extras.cc"
 
 #include <spot/tl/dot.hh>
 #include <spot/twaalgos/dualize.hh>
@@ -13,9 +14,7 @@
 #include <spot/twaalgos/isdet.hh>
 #include <spot/twaalgos/contains.hh>
 
-#include <spot/tl/relabel.hh>
-
-#define CONFIG_RELABEL_FORMULA 1
+#define CONFIG_RELABEL_FORMULA 0
 
 
 // #define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/amba/amba/parametric/amba_case_study.tlsf"
@@ -54,29 +53,9 @@ int main() {
 
   formula ltl = parse_formula(ltlstr);
 
-
   #if CONFIG_RELABEL_FORMULA
-    auto relabel_map = new std::map<formula, formula>();
-    ltl = spot::relabel(ltl, Abc, relabel_map);
-    #if GEN_PAGE_BASIC  
-      stringstream ss;
-      for (auto & [new_ap, old_ap] : *relabel_map) {
-        ss << new_ap << " = " << old_ap << endl;
-      }
-      cout << ss.str();
-      page_code("LTL formula renaming map:", ss.str());
-    #endif
-    // make new input_aps list
-    auto new_input_aps = vector<string>();
-    for (auto & [new_ap, old_ap] : *relabel_map) {
-      string old_ap_string = force_string(old_ap);
-      if (std::any_of(input_aps.begin(), input_aps.end(), [old_ap_string](string s){return s==old_ap_string;})) {
-        new_input_aps.push_back(force_string(new_ap));
-      }
-    }
-    input_aps.swap(new_input_aps);
+    rename_aps_in_formula(ltl, input_aps);
   #endif
-  
   
   auto timers = StopwatchSet();
   auto lsafe_timer = timers.make_timer("LSafe Total");

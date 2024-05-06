@@ -7,11 +7,14 @@
 #include <spot/twaalgos/complement.hh>
 #include <spot/twaalgos/complete.hh>
 #include "time.cc"
+#include "extras.cc"
 
 #define MAX_K 10
 
 #define longest_counterexample 1000
 // #include <spot/twa/bdddict.hh>
+
+using std::cout;
 
 /*
   Ideas:
@@ -41,8 +44,6 @@ twa_graph_ptr make_hypothesis_machine(qtset q, qtset t, Ltable tbl, bdd_dict_ptr
   unsigned init_state = out->new_state();
   return out;
 }
-
-typedef std::vector<bdd> alphabet_vec;
 
 // since the bdd ids assigned to variables aren't going to be consecutive,
 // we want to give them new indices so we can more mathematically iterate
@@ -329,14 +330,28 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     alphabet_vec alphabet = alphabet_from_bvm(bvm);
     unsigned const letter_count = alphabet.size();
     const unsigned h_fin_set = 0;
+
+    auto illegal_letters = get_dead_letter_map(cobuchi, alphabet);
   init_timer->stop();
+
 
   #if GEN_PAGE_BASIC
     page_text(to_string(ltl), "LTL");
     page_text(to_string(input_aps), "Input APs");
+
+    #if GEN_PAGE_DETAILS
+      const unsigned illegal_letter_count = count_false(illegal_letters);
+      if (illegal_letter_count > 0) {
+        stringstream ss;
+        ss << illegal_letter_count << " out of the " << letter_count << " letters (" << ((illegal_letter_count * 100.0) / letter_count) << "%) are illegal." << endl;
+        page_text(ss.str(), "Illegal letters");
+      }
+    #endif
+
     page_text(to_string(ltl_neg), "&not;LTL");
     page_graph(buchi_neg, "NonDet Buchi of negated LTL");
     page_graph(cobuchi, "Universal CoBuchi of LTL");
+    // page_text(to_string(bdd_to_formula(illegal_letters, dict)), "Illegal letters");
   #endif
 
   auto LSafeForK = [&](unsigned k) {

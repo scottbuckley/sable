@@ -19,6 +19,7 @@ using namespace std;
 using namespace spot;
 
 typedef std::vector<bool> ap_map;
+typedef std::vector<bdd> alphabet_vec;
 
 void debug(string msg) {
     cout << msg << '\n';
@@ -83,4 +84,15 @@ string to_string(formula f) {
 const inline string pad_number(unsigned n, unsigned width) {
   auto n_str = to_string(n);
   return std::string(width - n_str.length(), ' ') + n_str;
+}
+
+unsigned count_true(const vector<bool> & vec) {
+  unsigned count = 0;
+  for (const auto & b : vec)
+    if (b) count++;
+  return count;
+}
+
+inline unsigned count_false(const vector<bool> & vec) {
+  return vec.size() - count_true(vec);
 }
