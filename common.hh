@@ -1,8 +1,9 @@
 #pragma once
 
-#define GEN_PAGE_BASIC 0
-#define GEN_PAGE_DETAILS 0
+#define GEN_PAGE_BASIC 1
+#define GEN_PAGE_DETAILS 1
 #define GEN_PAGE_TIMER 1
+#define GEN_K_TIMERS 1
 
 #include <spot/tl/parse.hh>
 #include <spot/tl/print.hh>
@@ -77,4 +78,9 @@ string to_string(formula f) {
     stringstream x;
     x << f;
     return x.str();
+}
+
+const inline string pad_number(unsigned n, unsigned width) {
+  auto n_str = to_string(n);
+  return std::string(width - n_str.length(), ' ') + n_str;
 }

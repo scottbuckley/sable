@@ -1,5 +1,15 @@
 {
     "configurations": [
+      // {
+      //     "type": "gdb",
+      //     "request": "attach",
+      //     "name": "Attach to gdbserver",
+      //     "executable": "./test",   //relative to your workspace
+      //     "target": "localhost:1234", 
+      //     "remote": true,
+      //     "cwd": "${workspaceRoot}",
+      //     "valuesFormatting": "parseText"
+      // }
         {
             "name": "C/C++: clang build and debug active file",
             "type": "lldb",
@@ -16,4 +26,5 @@
         }
     ],
     "version": "2.0.0"
+    
 }

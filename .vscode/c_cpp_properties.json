@@ -4,7 +4,7 @@
             "name": "Mac",
             "includePath": [
                 "~/usr/include",
-                "/opt/homebrew/Cellar/boost/1.84.0/include",
+                "/opt/homebrew/Cellar/boost/1.85.0/include",
                 "/opt/homebrew/Cellar/glib/2.78.4/include/glib-2.0",
                 "/opt/homebrew/Cellar/glib/2.78.4/lib/glib-2.0/include",
                 "${workspaceFolder}/**"

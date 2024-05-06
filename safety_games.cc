@@ -389,12 +389,7 @@ std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, ap_map apmap, bool
     const bool winning = solve_safety_ap_game(g, apmap, verbose);
 
     twa_graph_ptr machine = get_strategy_machine(g);
-    machine->merge_edges();
+    machine->merge_edges(); // optional
 
     return {winning, machine};
-
-    // highlight_strategy_vec(g, 5, 4);
-    // generate_graph_image(g, true);
-    generate_graph_image(machine, true, "mealy");
-
 }

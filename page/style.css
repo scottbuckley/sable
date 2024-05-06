@@ -36,3 +36,10 @@ img {
     font-family: Lato, Verdana, Geneva, Tahoma, sans-serif;
 }
 
+svg {
+  max-width:100%;
+}
+
+span.graph_too_big {
+  font-style: italic;
+}

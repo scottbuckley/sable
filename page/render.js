@@ -1,9 +1,88 @@
+
+// if the number of states + edges is higher than this, the graph will not automatically
+// render, instead showing a button for manual rendering.
+const GRAPH_IMMEDIATE_RENDER_COUNT = 20;
+const GRAPH_SCROLL_RENDER_COUNT = 100;
+const GRAPH_TOO_BIG_TO_RENDER_COUNT = 2000;
+
+function isViewed(selector) {
+  var viewport = $(window),
+      item = $(selector);
+
+  var viewBtm = viewport.scrollTop() + window.innerHeight,
+      viewTop = viewport.scrollTop(),
+      itemTop = item.offset().top,
+      itemBtm = item.offset().top + item.height();
+
+  return ((itemTop < viewBtm) && itemBtm > viewTop);
+};
+
+var graphs_to_render = [];
+var graph_dot_strings = [];
+var counter = setInterval(function() {
+  for (var i=0; i<graphs_to_render.length; i++) {
+    var graph_tag = graphs_to_render[i];
+    if (graph_tag === undefined) continue;
+    if(isViewed(`#${graph_tag}`)) {
+        console.log(`Rendering ${graph_tag}, as it has scrolled into view.`);
+        render_graph(graph_tag, graph_dot_strings[graph_tag]);
+        graphs_to_render.splice(i,1);
+        break;
+    }
+  }
+}, 250);
+
+
 var vizInst = Viz.instance();
+
+function maybe_render_graph(id, dot, state_count, edge_count) {
+  const count = state_count + edge_count;
+  if (count <= GRAPH_IMMEDIATE_RENDER_COUNT) {
+    render_graph(id, dot);
+  } else if (count <= GRAPH_SCROLL_RENDER_COUNT) {
+    render_graph_on_scroll(id, dot);
+  } else if (count <= GRAPH_TOO_BIG_TO_RENDER_COUNT) {
+    render_graph_button(id, dot, count);
+  } else {
+    dont_render_graph(id, count, state_count, edge_count);
+  }
+}
 
 function render_graph(id, dot) {
     vizInst.then(function(viz){
-        document.getElementById(id).appendChild(viz.renderSVGElement(dot));
+      let svg_element = viz.renderSVGElement(dot);
+      svg_element.removeAttribute("height");
+      document.getElementById(id).appendChild(svg_element);
     });
+}
+
+function render_graph_on_scroll(id, dot) {
+  graphs_to_render.push(id);
+  graph_dot_strings[id] = dot;
+}
+
+function render_graph_button(id, dot, count) {
+  $(`#${id}`).append($("<button>", {
+    id: `${id}_button`,
+    text: `Render graph with ${count} nodes/edges`,
+    click: () => {
+      $(`#${id}_button`).text("Rendering graph ...").off("click");
+
+      // throwing this in a timeout so the above command gets properly rendered before we
+      // potentially freeze trying to load a graph.
+      setTimeout(() => {
+        render_graph(id, dot);
+        $(`#${id}_button`).hide();
+      }, 10);
+    }
+  }));
+}
+
+function dont_render_graph(id, count, state_count, edge_count) {
+  $(`#${id}`).append($("<span>", {
+    class: "graph_too_big",
+    text: `Will not attempt to render graph with ${state_count} states and ${edge_count} edges.`,
+  }));
 }
 
 const DONUT_TOTAL     = 4;
@@ -77,7 +156,7 @@ function render_donut(id, values) {
         .enter()
         .append('path')
         .attr('d', arc)
-        .attr('fill', d => {return color(d.data.key)})
+        .attr('fill', d => color(d.data.key))
         .attr("stroke", "white")
         .style("stroke-width", "2px")
         .style("opacity", 0.7)
@@ -118,6 +197,10 @@ function render_donut(id, values) {
             return (midangle < Math.PI ? 'start' : 'end')
         });
     
+    function getBB(selection) {
+        selection.each(function(d) { d.bbox = this.getBBox(); })
+    }
+
     // Add text in the middle of the arc
     svg
         .selectAll('allLabels')
@@ -130,6 +213,25 @@ function render_donut(id, values) {
             .attr("dominant-baseline", "middle")
             .attr("font-size", "1.25ex")
             .attr("font-weight", "bold")
-            .attr("transform", d => `translate(${arc.centroid(d)})`);
+            .attr("transform", d => `translate(${arc.centroid(d)})`)
+            .call(getBB);
             // .attr("transform", d => `translate(${arc.centroid(d)}) rotate(${(d.startAngle+d.endAngle)*90/Math.PI})`);
+
+    svg
+        .selectAll('allLabels')
+        .data(data_ready)
+        .enter()
+        .insert('rect', 'text')
+            .attr("transform", d => {
+                let [x, y] = arc.centroid(d);
+                return `translate(${x-d.bbox.width/2}, ${y-d.bbox.height/2})`;
+            })
+            .attr("width",  d => d.bbox.width)
+            .attr("height", d => d.bbox.height)
+            .attr("rx", 3).attr("ry", 3)
+            .attr("stroke-width", 5)
+            .attr("stroke", d => color(d.data.key))
+            .style("fill", d => color(d.data.key))
+            .style("opacity", 0.7);
+            
 }
