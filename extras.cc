@@ -4,7 +4,7 @@
 #include <string>
 #include <spot/tl/relabel.hh>
 
-bdd get_dead_letters(twa_graph_ptr g) {
+bdd get_dead_letters_bdd(twa_graph_ptr g) {
   accepting_state_cache asc = make_accepting_state_cache(g);
   bdd dead_letters = bddtrue;
   for (unsigned i=0; i<g->num_states(); ++i) {
@@ -23,12 +23,12 @@ bdd get_dead_letters(twa_graph_ptr g) {
   return dead_letters;
 }
 
-vector<bool> get_dead_letter_map(twa_graph_ptr g, alphabet_vec alphabet) {
-  bdd dead_letters = get_dead_letters(g);
-  auto bitmap = vector<bool>(alphabet.size(), true);
-  for (unsigned i=0; i<alphabet.size(); ++i) {
-    if (bdd_implies(alphabet[i], dead_letters)) {
-      bitmap[i] = false;
+boost::dynamic_bitset<> get_dead_letter_map(twa_graph_ptr g, alphabet_vec alphabet) {
+  bdd dead_letters = get_dead_letters_bdd(g);
+  auto bitmap = boost::dynamic_bitset<>(alphabet->size(), true);
+  for (unsigned i=0; i<alphabet->size(); ++i) {
+    if (bdd_implies((*alphabet)[i], dead_letters)) {
+      bitmap.set(i, false);
     }
   }
   return bitmap;

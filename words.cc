@@ -17,6 +17,53 @@ inline finite_word_ptr make_finite_word() {
     return std::make_shared<finite_word>();
 }
 
+
+typedef shared_ptr<vector<unsigned>> index_word_ptr;
+
+const index_word_ptr empty_word() {
+  return make_shared<vector<unsigned>>();
+}
+
+index_word_ptr copy_word(index_word_ptr word) {
+  index_word_ptr out = empty_word();
+  auto end = word->end();
+  for (auto it = word->begin(); it!=end; ++it) {
+    out->push_back(*it);
+  }
+  return out;
+}
+
+// template <>
+// struct hash<bdd>{
+//   std::size_t operator()( bdd const& val ) const {
+//     return 100;
+//   }
+// };
+
+/* here we assume that only one alphabet will be used in this run. if not, then UH OH.
+    but i'll put in a hash check just in case i guess */
+// alphabet_vec cached_alphabet = nullptr;
+// auto reverse_alphabet_cache = boost::unordered_map<bdd, unsigned>();
+
+//TODO: this should be reverse-engineerable from taking a look at the APs. The unsigned that
+// represents the bdd has its bits mapping directly to those APs, so I should be able to do this
+// using that kinda method.
+index_word_ptr bdd_word_to_index_word(finite_word_ptr word, alphabet_vec alphabet, better_var_map_ptr bvm, const bdd & varset) {
+  // if (cached_alphabet == nullptr) cached_alphabet = alphabet;
+  // else if (cached_alphabet != alphabet) throw logic_error("we are using a different alphabet now?!");
+  
+  auto out = empty_word();
+  for (const auto & bdd_letter : *word) {
+    // auto found = reverse_alphabet_cache.find(bdd_letter);
+    // if (found == reverse_alphabet_cache.end()) {
+      // doesn't exist in the cache
+      auto index_letter = make_bits_from_bdd(bdd_letter, bvm, varset, alphabet);
+      out->push_back(index_letter);
+    // }
+  }
+  return out;
+}
+
 finite_word_ptr string_to_prefix(bdd_dict_ptr dict, string wordstring) {
     finite_word_ptr fword = make_finite_word();
     bdd current_bdd = bddtrue;
