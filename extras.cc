@@ -1,6 +1,7 @@
 #pragma once
 #include "common.hh"
 #include "kcobuchi.cc"
+#include "kucb_intersection.cc"
 #include <string>
 #include <spot/tl/relabel.hh>
 
@@ -11,11 +12,11 @@ bdd get_dead_letters_bdd(twa_graph_ptr g) {
     for (auto & e : g->out(i)) {
       if (g->is_univ_dest(e.dst)) {
         for (auto dst : g->univ_dests(e.dst)) {
-          if (is_accepting_state(g, dst, asc) && is_sink(g, dst)) {
+          if (is_accepting_state(dst, asc) && is_sink(g, dst)) {
             dead_letters = bdd_and(dead_letters, e.cond);
           }
         }
-      } else if (is_accepting_state(g, e.dst, asc) && is_sink(g, e.dst)) {
+      } else if (is_accepting_state(e.dst, asc) && is_sink(g, e.dst)) {
         dead_letters = bdd_and(dead_letters, e.cond);
       }
     }
@@ -25,10 +26,11 @@ bdd get_dead_letters_bdd(twa_graph_ptr g) {
 
 boost::dynamic_bitset<> get_dead_letter_map(twa_graph_ptr g, alphabet_vec alphabet) {
   bdd dead_letters = get_dead_letters_bdd(g);
-  auto bitmap = boost::dynamic_bitset<>(alphabet->size(), true);
+  auto bitmap = boost::dynamic_bitset<>();
+  bitmap.resize(alphabet->size(), true);
   for (unsigned i=0; i<alphabet->size(); ++i) {
     if (bdd_implies((*alphabet)[i], dead_letters)) {
-      bitmap.set(i, false);
+      bitmap.reset(i);
     }
   }
   return bitmap;
@@ -55,4 +57,102 @@ void rename_aps_in_formula(formula & ltl, vector<string> & input_aps) {
     }
   }
   input_aps.swap(new_input_aps);
+}
+
+
+
+class TWAEdgeIterator {
+private:
+  std::vector<std::vector<tuple<unsigned, bdd>>> edges;
+public:
+  TWAEdgeIterator(twa_graph_ptr g) {
+    edges.resize(g->num_states());
+    for (unsigned s=0; s<g->num_states(); ++s) {
+      auto & edges_s = edges[s];
+      for (const auto & e : g->out(s)) {
+        if (!g->is_univ_dest(e.dst)) {
+          edges_s.push_back(make_tuple(e.dst, e.cond));
+        } else {
+          for (const auto & dst : g->univ_dests(e.dst)) {
+            edges_s.push_back(make_tuple(dst, e.cond));
+          }
+        }
+      }
+    }
+  }
+
+  std::vector<tuple<unsigned, bdd>> & out(unsigned s) {
+    return edges[s];
+  }
+};
+
+TWAEdgeIterator * get_edge_iterator(twa_graph_ptr g) {
+  TWAEdgeIterator * existing = g->get_named_prop<TWAEdgeIterator>("edge_iterator");
+  if (existing != nullptr) return existing;
+  auto edge_iter = new TWAEdgeIterator(g);
+  g->set_named_prop<TWAEdgeIterator>("edge_iterator", edge_iter);
+  return edge_iter;
+}
+
+twa_word_ptr test_moore_kucb_intersection(twa_graph_ptr moore_machine, twa_graph_ptr ucb, unsigned k, twa_graph_ptr kucb) {
+  // moore_kucb_intersection
+  cout << "\n\n\n\n\n";
+  cout << "performing moore kucb intersection ..." << endl;
+  auto counter = moore_machine->intersecting_word(kucb);
+
+  // auto x = moore_kucb_intersection(moore_machine, ucb, k);
+  // cout << x << endl;
+
+  if (counter == nullptr) {
+    cout << "NO counterexample found by spot" << endl;
+  } else {
+    cout << "counterexample found by spot" << endl;
+  }
+  // cout << print_prefix(cout, moore_machine->get_dict(), inter) << endl;
+
+  cout << "\n\n\n\n\n";
+  // exit(0);
+  return counter;
+}
+
+// assumes no universal edges
+bool is_valid_mealy_machine(twa_graph_ptr g, bdd apmask) {
+  const unsigned num_states = g->num_states();
+  for (unsigned s=0; s<num_states; ++s) {
+    bdd input_covered = bddfalse;
+    for (const auto & e : g->out(s)) {
+      bdd cond_input = bdd_existcomp(e.cond, apmask);
+      input_covered |= cond_input;
+    }
+    if (input_covered != bddtrue) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool is_valid_moore_machine(twa_graph_ptr g, bdd apmask) {
+  const unsigned num_states = g->num_states();
+  for (unsigned s=0; s<num_states; ++s) {
+    bdd common_input = bddtrue;
+    for (const auto & e : g->out(s)) {
+      bdd cond_input = bdd_existcomp(e.cond, apmask);
+      common_input &= cond_input;
+    }
+    if (common_input == bddfalse) {
+      // there is no common input
+      cout << "there's no common input" << endl;
+      return false;
+    }
+    bdd output_covered = bddfalse;
+    for (const auto & e : g->out(s)) {
+      bdd cond_output = bdd_exist(e.cond, apmask);
+      output_covered |= cond_output;
+    }
+    if (output_covered != bddtrue) {
+      cout << "output isn't covered" << endl;
+      return false;
+    }
+  }
+  return true;
 }

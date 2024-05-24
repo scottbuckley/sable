@@ -283,6 +283,7 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
   // auto global_kucb_compl_timer = timers.make_timer("KUCB Complementing");
   auto init_timer              = timers.make_timer("Initialisation");
   auto global_walk_timer       = timers.make_timer("Walking");
+  auto global_walk_building_timer       = timers.make_timer("Building Walkers");
   global_walk_timer->set_subsumption_parent(global_closing_timer);
 
   // Set up lots of required bits and pieces (and time it)
@@ -332,11 +333,11 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     auto solving_timer    = local_timers.make_timer("Safety Game Solving Instance", global_solving_timer);
     // auto kucb_compl_timer = local_timers.make_timer("KUCB Complementing Instance", global_kucb_compl_timer);
     auto walk_timer       = local_timers.make_timer("Walking Instance", global_walk_timer);
+    auto build_walker_timer    = local_timers.make_timer("Building Walker", global_walk_building_timer);
     auto closing_timer    = local_timers.make_timer("Table Closing Instance", global_closing_timer);
     auto lsafe_k_total    = local_timers.make_timer("Total for K", nullptr, TIMER_GRAPH_TOTAL);
     walk_timer->set_subsumption_parent(closing_timer);
     // auto walk_timer = new Stopwatch("meow"); // so it's not used
-
 
     // auto test_timer = local_timers.make_timer("Test Timer");
     
@@ -358,8 +359,11 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     // set up the walker
     #if CONFIG_WALKER_TYPE == CONFIG_WALKER_TYPE_BDDS
       Walker<bdd, ucb_walk_position_set, finite_word_ptr> * walk = new UCB_BDD_Walker(kucb);
+      build_walker_timer->flag_ignored();
     #elif CONFIG_WALKER_TYPE == CONFIG_WALKER_TYPE_INDEXES
-      Walker<unsigned, walk_position, index_word_ptr> * walk = new Indexed_Universal_Walker(kucb, alphabet);
+      build_walker_timer->start();
+        Walker<unsigned, walk_position, index_word_ptr> * walk = new Indexed_Universal_Walker(kucb, alphabet);
+      build_walker_timer->stop();
     #endif
     const bool init_state_accepted = !walk->failed();
 
@@ -609,7 +613,7 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
       
       closing_timer->start();
         twa_graph_ptr H = close_table();
-      closing_timer->stop()->report("  > ")->reset();
+      closing_timer->stop();
       #if GEN_PAGE_DETAILS
         page_code("Hypothesis table:", dump_lsafe_state2(dict, alphabet, ptree, P, S, bt));
         page_text(to_string(H->num_states()), "Number of states");
@@ -663,19 +667,24 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
           #endif
         } else {
           #if GEN_PAGE_DETAILS
-          page_text("No counterexample found. The mealy machine above satisfies the kUCB.");
-          page_text("Also checking against the UCB");
+            page_text("No counterexample found. The mealy machine above satisfies the kUCB.");
+            page_text("Also checking against the UCB");
           #endif
           inclusion_timerB->start();
+            // this is doing something wrong i think.
+            // we have our machine. we are in the REALIZABLE section of this algorithm.
+            // so it's a mealy machine. we want to see if this is included in ....
             twa_word_ptr new_counterexample = machine->intersecting_word(buchi_neg);
           inclusion_timerB->stop();
           if (word_not_empty(new_counterexample)) {
             #if GEN_PAGE_DETAILS
-            page_text("OH NO PROBLEMS");
+              page_text("This machine apparently doesn't satisfy the UCB.", "OH NO!");
+              page_code("Counterexample", force_string(*new_counterexample));
+              exit(1);
             #endif
           } else {
             #if GEN_PAGE_DETAILS
-            page_text("Also passed the Buchi test.");
+              page_text("Also passed the Buchi test.");
             #endif
             cout << "sanity check passed" << endl;
           }
@@ -692,6 +701,7 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
         // gives us a positive counterexample.
         inclusion_timerC->start();
           twa_word_ptr counterexample = machine->intersecting_word(kucb);
+          // twa_word_ptr counterexample = test_moore_kucb_intersection(machine, cobuchi, k, kucb);  //machine->intersecting_word(kucb);
         inclusion_timerC->stop()->report();
         if (word_not_empty(counterexample)) {
           fully_specify_word(counterexample, varset);

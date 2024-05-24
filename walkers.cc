@@ -123,12 +123,12 @@ private:
           if (letter_satisfies_cond(letter_bdd, e.cond)) {
             if (g->is_univ_dest(e.dst)) {
               for (unsigned dst : g->univ_dests(e.dst)) {
-                if (is_accepting_state(g, dst, asc) && is_sink(g, dst))
+                if (is_accepting_state(dst, asc) && is_sink(g, dst))
                   will_fail = true;
                 sset->set(dst);
               }
             } else {
-              if (is_accepting_state(g, e.dst, asc) && is_sink(g, e.dst))
+              if (is_accepting_state(e.dst, asc) && is_sink(g, e.dst))
                 will_fail = true;
               sset->set(e.dst);
             }

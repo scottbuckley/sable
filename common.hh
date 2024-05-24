@@ -1,9 +1,12 @@
 #pragma once
 
-#define GEN_PAGE_BASIC 0
-#define GEN_PAGE_DETAILS 0
+#define GEN_PAGE_BASIC 1
+#define GEN_PAGE_DETAILS 1
 #define GEN_PAGE_TIMER 1
 #define GEN_K_TIMERS 1
+
+#define CONFIG_RELABEL_FORMULA 0
+#define CONFIG_SOLVE_GAME_DETERMINISTIC 1
 
 #include <spot/tl/parse.hh>
 #include <spot/tl/print.hh>
