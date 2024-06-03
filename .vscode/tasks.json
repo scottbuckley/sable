@@ -3,7 +3,8 @@
         {
             "type": "cppbuild",
             "label": "C/C++: clang build test.cc",
-            "command": "/usr/bin/g++",
+            "command": "/opt/homebrew/opt/llvm@12/bin/clang++",
+            // "command": "/usr/bin/g++",
             "args": [
                 "-std=c++17",
                 "-L/Users/scott/usr/lib",

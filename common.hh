@@ -1,7 +1,7 @@
 #pragma once
 
-#define GEN_PAGE_BASIC 1
-#define GEN_PAGE_DETAILS 1
+#define GEN_PAGE_BASIC 0
+#define GEN_PAGE_DETAILS 0
 #define GEN_PAGE_TIMER 1
 #define GEN_K_TIMERS 1
 
@@ -177,3 +177,19 @@ unsigned make_bits_from_bdd(bdd b, better_var_map_ptr bvm, const bdd & varset, a
   }
   return bits;
 }
+
+inline bool bdd_overlap(const bdd &l, const bdd &r) noexcept {
+  return ((l & r) != bddfalse);
+}
+
+inline int bdd_compat(const bdd &l, const bdd &r) noexcept {
+  return (bdd_implies(l, r) || bdd_implies(r, l));
+}
+
+struct store_unsigned {
+  unsigned val = 0;
+  store_unsigned(unsigned val) : val{val} {};
+  store_unsigned * copy() {
+    return new store_unsigned(val);
+  }
+};

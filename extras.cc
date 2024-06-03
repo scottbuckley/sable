@@ -94,21 +94,46 @@ TWAEdgeIterator * get_edge_iterator(twa_graph_ptr g) {
   return edge_iter;
 }
 
+// here we are testing out our own moore/ucb intersection
 twa_word_ptr test_moore_kucb_intersection(twa_graph_ptr moore_machine, twa_graph_ptr ucb, unsigned k, twa_graph_ptr kucb) {
   // moore_kucb_intersection
   cout << "\n\n\n\n\n";
-  cout << "performing moore kucb intersection ..." << endl;
-  auto counter = moore_machine->intersecting_word(kucb);
+  
+  cout << "performing moore kucb intersection (ours) ..." << endl;
+  bool we_found_counter = moore_kucb_intersection(moore_machine, ucb, k);
+  cout << "done." << endl;
 
-  // auto x = moore_kucb_intersection(moore_machine, ucb, k);
+  // if (we_found_counter == false) {
+  //   return nullptr;
+  // }
+
+  cout << "performing moore kucb intersection (spot) ..." << endl;
+  auto counter = moore_machine->intersecting_word(kucb);
+  cout << "done. " << "counterexample found: " << ((counter == nullptr) ? "no" : "yes") << endl;
+
+  
   // cout << x << endl;
 
   if (counter == nullptr) {
     cout << "NO counterexample found by spot" << endl;
   } else {
     cout << "counterexample found by spot" << endl;
+    throw std::runtime_error("we need to figure out how to extract our own fucken counterexample here");
+    cout << "we also found a counterexample! but how do we extract it????" << endl;
+    page_finish();
+    exit(1);
+  }
+
+  if ((counter == nullptr && we_found_counter) || (counter != nullptr && !we_found_counter)) {
+    cout << "we got a different result to spot" << endl;
+    page_finish();
+    exit(1);
   }
   // cout << print_prefix(cout, moore_machine->get_dict(), inter) << endl;
+
+  if (counter != nullptr) {
+    cout << "well we recognised the existence of a counterexample, although we currently have no way to actually extract it." << endl;
+  }
 
   cout << "\n\n\n\n\n";
   // exit(0);

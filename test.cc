@@ -23,10 +23,10 @@
 // #define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/amba/amba_decomposed/amba_decomposed_tsingle.tlsf"
 // #define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/ltl2dba/parametric/ltl2dba_R.tlsf"
 // #define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/full_arbiter/parametric/full_arbiter.tlsf"
-#define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/full_arbiter/parametric/simple_arbiter_2.tlsf"
+// #define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/full_arbiter/parametric/simple_arbiter_2.tlsf"
 // #define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/full_arbiter/parametric/simple_arbiter_3.tlsf"
 // #define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/full_arbiter/parametric/simple_arbiter_4.tlsf"
-// #define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/full_arbiter/parametric/simple_arbiter_5.tlsf" // start with K=4, answer in 12 minutes, mostly walking, 10% unmeasured
+#define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/full_arbiter/parametric/simple_arbiter_5.tlsf" // start with K=4, answer in 12 minutes, mostly walking, 10% unmeasured
 // #define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/full_arbiter/parametric/simple_arbiter_6.tlsf"
 // #define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/full_arbiter/parametric/simple_arbiter_7.tlsf"
 // #define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/full_arbiter/parametric/simple_arbiter_8.tlsf"

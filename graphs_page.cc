@@ -42,14 +42,13 @@ void page_start(string heading = "") {
   page.open("page/index.html");
   page << "<html><head>" << endl;
   page << "<link rel=\"stylesheet\" href=\"style.css\">" << endl;
-  page << "<script src=\"viz-standalone.js\"></script>" << endl;
-  page << "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">"
-      "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>"
-      "<link href=\"https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap\" rel=\"stylesheet\">"
-      "<script src=\"https://d3js.org/d3.v4.js\"></script>"
-      "<script src=\"https://d3js.org/d3-scale-chromatic.v1.min.js\"></script>"
-      "<script src=\"https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js\"></script>"
-     << endl;
+  page << "<script src=\"include/viz-standalone.js\"></script>" << endl;
+  page << "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">" << endl;
+  page << "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>" << endl;
+  page << "<link href=\"https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap\" rel=\"stylesheet\">" << endl;
+  page << "<script src=\"include/d3.v4.js\"></script>" << endl;
+  page << "<script src=\"include/d3-scale-chromatic.v1.min.js\"></script>" << endl;
+  page << "<script src=\"include/jquery.3.7.1.min.js\"></script>" << endl;
   page << "</head><body>" << endl;
 
   page << "<script src=\"render.js\"></script>";

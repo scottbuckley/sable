@@ -10,6 +10,10 @@
 using namespace std;
 using namespace spot;
 
+std::function<void(void*)> blank_des = [](void *p) noexcept {
+  //delete static_cast<unsigned*>(p); 
+};
+
 /* not currently used - this was just used during testing
 twa_graph_ptr un_universalise(twa_graph_ptr input) {
   twa_graph_ptr output = make_twa_graph(input->get_dict());
@@ -72,10 +76,6 @@ twa_graph_ptr highlight_strategy_vec(twa_graph_ptr& aut, int player0_color, int 
   return aut;
 }
 
-inline int bdd_compat(const bdd &l, const bdd &r) noexcept {
-  return (bdd_implies(l, r) || bdd_implies(r, l));
-}
-
 // solve the safety game on a graph where players' states are not separated; instead
 // consider APs covered by `apmap` to belong to Input/Player1, and all other APs to 
 // belong to Output/Player2. This logic considers that Input/Player1 plays first, such
@@ -91,9 +91,10 @@ bool solve_safety_ap_game(const twa_graph_ptr& game, bdd & apmask, bool verbose 
 
   const unsigned ns = game->num_states();
   auto winners = new region_t(ns, true);
-  game->set_named_prop("state-winner", winners);
+  game->set_named_prop("state-winner", winners, blank_des);
   auto strategy = new strat_v(ns);
-  game->set_named_prop("strategy-vec", strategy);
+  game->set_named_prop("strategy-vec", strategy, blank_des);
+  
 
   // transposed is a reversed copy of game to compute predecessors
   // more easily.  It also keep track of the original edge index and condition.
@@ -112,6 +113,9 @@ bool solve_safety_ap_game(const twa_graph_ptr& game, bdd & apmask, bool verbose 
     }
     //FIXME: why does this need to be negated?
     if (!game->state_is_accepting(s)) {
+      // record that this is the sink state
+      game->set_named_prop("sink-idx", new store_unsigned(s));
+
       (*winners)[s] = false;
       dead_queue.push_back(s);
       // mark any self-edges from this accepting dead state as part of the strategy.
@@ -380,6 +384,14 @@ twa_graph_ptr get_strategy_machine(twa_graph_ptr input) {
   };
 
   visit_state(emplace_new_state(input_init_state), input_init_state);
+
+  if (!strategy_is_winning) {
+    output->copy_named_properties_of(input);
+    // if we are making a moore machine, we should record which state is the sink.
+    store_unsigned * sink_idx_ptr = input->get_named_prop<store_unsigned>("sink-idx");
+    output->set_named_prop<store_unsigned>("sink-idx", sink_idx_ptr->copy());
+  }
+
   return output;
 }
 
@@ -475,6 +487,16 @@ twa_graph_ptr minimise_moore_machine_pre_merge(twa_graph_ptr g, const bdd & apma
     }
   };
   visit_state(emplace_new_state(init_state), init_state);
+
+  
+
+  // copy over the sink index
+  //set_named_prop(s, val, [](void *p) noexcept { delete static_cast<T*>(p); })
+  auto sink_idx_ptr = g->get_named_prop<store_unsigned>("sink-idx");
+  unsigned new_sink_idx = emplace_new_state(sink_idx_ptr->val);
+  auto new_sink_idx_ptr = new store_unsigned(new_sink_idx);
+  output->set_named_prop("sink-idx", new_sink_idx_ptr);
+
   return output;
 }
 
@@ -525,7 +547,6 @@ std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, ap_map apmap, bool
 
   if (winning) {
     #if CONFIG_SOLVE_GAME_DETERMINISTIC
-      // page_graph(machine, "mealy pre minimisation");
       machine = minimise_mealy_machine_pre_merge(machine, apmask);
     #endif
 
@@ -542,7 +563,9 @@ std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, ap_map apmap, bool
       machine = minimise_moore_machine_pre_merge(machine, apmask);
     #endif
 
+    // page_graph(machine, "pre merge");
     machine->merge_edges(); // optional
+    // page_graph(machine, "post merge");
 
     if (!is_valid_moore_machine(machine, apmask)) {
       cout << "OH NO it's not a valid moore you did something wrong :(";

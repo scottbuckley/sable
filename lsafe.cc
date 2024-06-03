@@ -700,8 +700,9 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
         // we just got back a moore machine. find an intersecting word with the kucb to see if it
         // gives us a positive counterexample.
         inclusion_timerC->start();
-          twa_word_ptr counterexample = machine->intersecting_word(kucb);
-          // twa_word_ptr counterexample = test_moore_kucb_intersection(machine, cobuchi, k, kucb);  //machine->intersecting_word(kucb);
+          // twa_word_ptr counterexample = machine->intersecting_word(kucb);
+          twa_word_ptr counterexample = test_moore_kucb_intersection(machine, cobuchi, k, kucb);  //machine->intersecting_word(kucb);
+          cout << "meow" << endl;
         inclusion_timerC->stop()->report();
         if (word_not_empty(counterexample)) {
           fully_specify_word(counterexample, varset);

@@ -16,14 +16,20 @@
             "request": "launch",
             "program": "${fileDirname}/${fileBasenameNoExtension}",
             "args": [],
-            "stopAtEntry": false,
+            "stopAtEntry": true,
             "cwd": "${fileDirname}",
             "environment": [],
             "externalConsole": false,
             "MIMode": "lldb",
             "preLaunchTask": "C/C++: clang build active file Scott",
             "targetArchitecture": "arm64"
-        }
+        },
+        {
+          "type": "lldb-vscode",
+          "request": "launch",
+          "name": "Debug",
+          "program": "test"
+          }
     ],
     "version": "2.0.0"
     
