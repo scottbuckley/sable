@@ -5,6 +5,7 @@
 #include <spot/twaalgos/game.hh>
 #include <spot/misc/escape.hh>
 #include <spot/twaalgos/sccinfo.hh>
+#include <spot/twaalgos/complement.hh>
 #include <queue>
 
 using namespace std;
@@ -90,10 +91,10 @@ bool solve_safety_ap_game(const twa_graph_ptr& game, bdd & apmask, bool verbose 
   // cout << "ap mask: " << bdd_to_formula(apmask, game->get_dict()) << endl;
 
   const unsigned ns = game->num_states();
-  auto winners = new region_t(ns, true);
-  game->set_named_prop("state-winner", winners, blank_des);
-  auto strategy = new strat_v(ns);
-  game->set_named_prop("strategy-vec", strategy, blank_des);
+  auto winners = new region_t(ns, true); //leak
+  game->set_named_prop("state-winner", winners);
+  auto strategy = new strat_v(ns); //leak
+  game->set_named_prop("strategy-vec", strategy);
   
 
   // transposed is a reversed copy of game to compute predecessors
@@ -352,6 +353,13 @@ bool solve_safety_ap_game_merged_edges(const twa_graph_ptr& game, std::vector<bo
   return !losing_strategy_found;
 }
 
+void translate_sink_idx(twa_graph_ptr src, twa_graph_ptr dest, function<unsigned(unsigned)> state_translate_fn) {
+  unsigned new_sink_idx = state_translate_fn(src->get_named_prop<store_unsigned>("sink-idx")->val);
+  dest->set_named_prop<store_unsigned>("sink-idx", new store_unsigned(new_sink_idx));
+}
+
+// produces a strategy (mealy/moore) machine from a hypothesis graph which
+// has been solved already. produces the MOST PERMISSIVE strategy.
 twa_graph_ptr get_strategy_machine(twa_graph_ptr input) {
   twa_graph_ptr output = make_twa_graph(input->get_dict());
   std::unordered_map<unsigned, unsigned> statemap;
@@ -388,12 +396,13 @@ twa_graph_ptr get_strategy_machine(twa_graph_ptr input) {
   if (!strategy_is_winning) {
     output->copy_named_properties_of(input);
     // if we are making a moore machine, we should record which state is the sink.
-    store_unsigned * sink_idx_ptr = input->get_named_prop<store_unsigned>("sink-idx");
-    output->set_named_prop<store_unsigned>("sink-idx", sink_idx_ptr->copy());
+    translate_sink_idx(input, output, emplace_new_state);
   }
 
   return output;
 }
+
+
 
 
 twa_graph_ptr minimise_mealy_machine_pre_merge(twa_graph_ptr g, const bdd & apmask, const bool specialise_sinks = true) {
@@ -492,10 +501,11 @@ twa_graph_ptr minimise_moore_machine_pre_merge(twa_graph_ptr g, const bdd & apma
 
   // copy over the sink index
   //set_named_prop(s, val, [](void *p) noexcept { delete static_cast<T*>(p); })
-  auto sink_idx_ptr = g->get_named_prop<store_unsigned>("sink-idx");
-  unsigned new_sink_idx = emplace_new_state(sink_idx_ptr->val);
-  auto new_sink_idx_ptr = new store_unsigned(new_sink_idx);
-  output->set_named_prop("sink-idx", new_sink_idx_ptr);
+  translate_sink_idx(g, output, emplace_new_state);
+  // auto sink_idx_ptr = g->get_named_prop<store_unsigned>("sink-idx");
+  // unsigned new_sink_idx = emplace_new_state(sink_idx_ptr->val);
+  // auto new_sink_idx_ptr = new store_unsigned(new_sink_idx);
+  // output->set_named_prop("sink-idx", new_sink_idx_ptr);
 
   return output;
 }
@@ -576,4 +586,128 @@ std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, ap_map apmap, bool
   }
 
   return {winning, machine};
+}
+
+
+
+
+
+
+
+
+
+
+
+twa_graph_ptr create_hardcoded_solution(bdd_dict_ptr dict) {
+  auto g = make_twa_graph(dict);
+  auto left_state = g->new_state();
+  auto right_state = g->new_state();
+  
+  int ir0 = get_bdd_var_index(dict, "r0");
+  int ir1 = get_bdd_var_index(dict, "r1");
+  int igg = get_bdd_var_index(dict, "g");
+
+  bdd r0 = bdd_ithvar(ir0);
+  bdd _r0 = bdd_nithvar(ir0);
+  bdd r1 = bdd_ithvar(ir1);
+  bdd _r1 = bdd_nithvar(ir1);
+  bdd gg = bdd_ithvar(igg);
+  bdd _gg = bdd_nithvar(igg);
+
+  // auto for_bdd = new bdd();
+  bdd bdd_none = _r0 & _r1 & _gg;
+  bdd bdd_r0_g = r0 & gg;
+  bdd bdd_r1_g = r1 & gg;
+
+  g->new_edge(left_state, left_state, bdd_none);
+  g->new_edge(right_state, right_state, bdd_none);
+
+  g->new_edge(left_state, right_state, bdd_r0_g);
+  g->new_edge(right_state, left_state, bdd_r1_g);
+
+  return g;
+}
+
+twa_graph_ptr create_hardcoded_solution2(bdd_dict_ptr dict) {
+  auto g = make_twa_graph(dict);
+  auto left = g->new_state();
+  auto rght = g->new_state();
+  
+  int ir0 = get_bdd_var_index(dict, "r0");
+  int ir1 = get_bdd_var_index(dict, "r1");
+  int igg = get_bdd_var_index(dict, "g");
+
+  const bdd  r0 = bdd_ithvar(ir0);
+  const bdd _r0 = bdd_nithvar(ir0);
+  const bdd  r1 = bdd_ithvar(ir1);
+  const bdd _r1 = bdd_nithvar(ir1);
+  const bdd  gg = bdd_ithvar(igg);
+  const bdd _gg = bdd_nithvar(igg);
+
+  g->new_edge(left, left, _r0 & _gg);
+  g->new_edge(left, rght, r0  & _gg);
+
+  g->new_edge(rght, rght, _r1 & _gg);
+  g->new_edge(rght, left, r1 & gg);
+
+  return g;
+}
+
+twa_graph_ptr create_shitty_hardcoded_solution(bdd_dict_ptr dict) {
+  auto g = make_twa_graph(dict);
+  auto left_state = g->new_state();
+  
+  int ir0 = get_bdd_var_index(dict, "r0");
+  int ir1 = get_bdd_var_index(dict, "r1");
+  int igg = get_bdd_var_index(dict, "g");
+
+  bdd r0 = bdd_ithvar(ir0);
+  bdd _r0 = bdd_nithvar(ir0);
+  bdd r1 = bdd_ithvar(ir1);
+  bdd _r1 = bdd_nithvar(ir1);
+  bdd gg = bdd_ithvar(igg);
+  bdd _gg = bdd_nithvar(igg);
+
+  // auto for_bdd = new bdd();
+  bdd bdd_none = _r0 & _r1 & _gg;
+  bdd bdd_g = (r0 | r1) & gg;
+
+  g->new_edge(left_state, left_state, bdd_none);
+  g->new_edge(left_state, left_state, bdd_g);
+
+  return g;
+}
+
+
+
+void debug_check_hardcoded_solution(twa_graph_ptr hyp, ap_map apmap) {
+  bdd apmask = apmap_mask(apmap, hyp->get_dict());
+  page_text("doing some debugging ...");
+  auto strat = get_strategy_machine(hyp);
+  page_graph(strat, "most permissive strat");
+
+  auto small_solution = create_hardcoded_solution2(hyp->get_dict());
+  page_graph(small_solution, "Ideal solution");
+  if (!is_valid_mealy_machine(small_solution, apmask)) {
+    page_text("THIS IS NOT A VALID MEALY MACHINE");
+    throw std::runtime_error("The hard-coded solution is not a valid mealy machine!");
+  }
+
+  auto strat_compl = spot::complement(strat);
+  page_graph(strat_compl, "most permissive strat (complemented)");
+
+  bool x = small_solution->intersects(strat_compl);
+
+  if (x) {
+    page_text("The ideal solution is NOT found in the most-permissive strategy of the final hypothesis.");
+  } else {
+    page_text("The ideal solution IS found in the most-permissive strategy of the final hypothesis.");
+  }
+
+  twa_word_ptr ce = small_solution->intersecting_word(strat_compl);
+  if (ce == nullptr) {
+    cout << "counterexample not found" << endl;
+  } else {
+    cout << *ce << endl;
+  }
 }

@@ -1,12 +1,15 @@
 #pragma once
 
-#define GEN_PAGE_BASIC 0
-#define GEN_PAGE_DETAILS 0
-#define GEN_PAGE_TIMER 1
-#define GEN_K_TIMERS 1
-
 #define CONFIG_RELABEL_FORMULA 0
 #define CONFIG_SOLVE_GAME_DETERMINISTIC 1
+
+#define CONFIG_REDUNDANT_CHECK_MOORE_INTERSECTION_AGAINST_SPOT 1
+
+#define PAUSE_REGULARLY 0
+
+#include <iostream>
+#include <fstream>
+#include <string>
 
 #include <spot/tl/parse.hh>
 #include <spot/tl/print.hh>
@@ -15,6 +18,8 @@
 #include <spot/twaalgos/hoa.hh>
 #include <spot/twaalgos/word.hh>
 #include <spot/twaalgos/dot.hh>
+
+#include "command_line_args.cc"
 
 #include "graphs_page.cc"
 
@@ -193,3 +198,24 @@ struct store_unsigned {
     return new store_unsigned(val);
   }
 };
+
+
+
+
+#if PAUSE_REGULARLY
+  #define PAUSE wait()
+#else
+  #define PAUSE
+#endif
+
+string line;
+
+inline void wait() {
+  cout << "press enter to continue ... ";
+  std::getline(std::cin, line);
+}
+
+inline void wait(string s) {
+  cout << s;
+  std::getline(std::cin, line);
+}

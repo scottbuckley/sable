@@ -2,22 +2,24 @@
     "tasks": [
         {
             "type": "cppbuild",
-            "label": "C/C++: clang build test.cc",
+            "label": "C/C++: clang debug build test.cc",
             "command": "/opt/homebrew/opt/llvm@12/bin/clang++",
             // "command": "/usr/bin/g++",
             "args": [
                 "-std=c++17",
                 "-L/Users/scott/usr/lib",
+                "-L/opt/homebrew/Cellar/boost/1.85.0/lib",
                 "-I/opt/homebrew/Cellar/boost/1.85.0/include",
                 "-I/Users/scott/usr/include",
                 "-fcolor-diagnostics",
                 "-fansi-escape-codes",
                 "-g",
-                "test.cc",
+                "sable.cc",
                 "-o",
-                "${fileDirname}/test",
+                "${fileDirname}/sable",
                 "-lspot",
                 "-lbddx",
+                "-lboost_program_options",
             ],
             "options": {
                 "cwd": "${fileDirname}"

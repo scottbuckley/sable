@@ -19,13 +19,14 @@ function isViewed(selector) {
 
 var graphs_to_render = [];
 var graph_dot_strings = [];
+var graph_state_counts = [];
 var counter = setInterval(function() {
   for (var i=0; i<graphs_to_render.length; i++) {
     var graph_tag = graphs_to_render[i];
     if (graph_tag === undefined) continue;
     if(isViewed(`#${graph_tag}`)) {
         console.log(`Rendering ${graph_tag}, as it has scrolled into view.`);
-        render_graph(graph_tag, graph_dot_strings[graph_tag]);
+        render_graph(graph_tag, graph_dot_strings[graph_tag], graph_state_counts[graph_tag]);
         graphs_to_render.splice(i,1);
         break;
     }
@@ -38,30 +39,33 @@ var vizInst = Viz.instance();
 function maybe_render_graph(id, dot, state_count, edge_count) {
   const count = state_count + edge_count;
   if (count <= GRAPH_IMMEDIATE_RENDER_COUNT) {
-    render_graph(id, dot);
+    render_graph(id, dot, state_count);
   } else if (count <= GRAPH_SCROLL_RENDER_COUNT) {
-    render_graph_on_scroll(id, dot);
+    render_graph_on_scroll(id, dot, state_count);
   } else if (count <= GRAPH_TOO_BIG_TO_RENDER_COUNT) {
-    render_graph_button(id, dot, count);
+    render_graph_button(id, dot, count, state_count);
   } else {
     dont_render_graph(id, count, state_count, edge_count);
   }
 }
 
-function render_graph(id, dot) {
+function render_graph(id, dot, state_count = 0) {
     vizInst.then(function(viz){
       let svg_element = viz.renderSVGElement(dot);
       svg_element.removeAttribute("height");
       document.getElementById(id).appendChild(svg_element);
+      if (state_count > 0)
+        document.getElementById(id).setAttribute("title", state_count + " states");
     });
 }
 
-function render_graph_on_scroll(id, dot) {
+function render_graph_on_scroll(id, dot, state_count) {
   graphs_to_render.push(id);
   graph_dot_strings[id] = dot;
+  graph_state_counts[id] = state_count;
 }
 
-function render_graph_button(id, dot, count) {
+function render_graph_button(id, dot, count, state_count) {
   $(`#${id}`).append($("<button>", {
     id: `${id}_button`,
     text: `Render graph with ${count} nodes/edges`,
@@ -71,7 +75,7 @@ function render_graph_button(id, dot, count) {
       // throwing this in a timeout so the above command gets properly rendered before we
       // potentially freeze trying to load a graph.
       setTimeout(() => {
-        render_graph(id, dot);
+        render_graph(id, dot, state_count);
         $(`#${id}_button`).hide();
       }, 10);
     }

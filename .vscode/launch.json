@@ -1,36 +1,41 @@
 {
-    "configurations": [
+  "configurations": [
+    // {
+    //     "type": "gdb",
+    //     "request": "attach",
+    //     "name": "Attach to gdbserver",
+    //     "executable": "./test",   //relative to your workspace
+    //     "target": "localhost:1234", 
+    //     "remote": true,
+    //     "cwd": "${workspaceRoot}",
+    //     "valuesFormatting": "parseText"
+    // }
       // {
-      //     "type": "gdb",
-      //     "request": "attach",
-      //     "name": "Attach to gdbserver",
-      //     "executable": "./test",   //relative to your workspace
-      //     "target": "localhost:1234", 
-      //     "remote": true,
-      //     "cwd": "${workspaceRoot}",
-      //     "valuesFormatting": "parseText"
-      // }
-        {
-            "name": "C/C++: clang build and debug active file",
-            "type": "lldb",
-            "request": "launch",
-            "program": "${fileDirname}/${fileBasenameNoExtension}",
-            "args": [],
-            "stopAtEntry": true,
-            "cwd": "${fileDirname}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "lldb",
-            "preLaunchTask": "C/C++: clang build active file Scott",
-            "targetArchitecture": "arm64"
-        },
-        {
-          "type": "lldb-vscode",
-          "request": "launch",
-          "name": "Debug",
-          "program": "test"
-          }
-    ],
-    "version": "2.0.0"
-    
+      //     "name": "C/C++: clang build and debug active file",
+      //     "type": "lldb",
+      //     "request": "launch",
+      //     "program": "${fileDirname}/${fileBasenameNoExtension}",
+      //     "args": [],
+      //     "stopAtEntry": true,
+      //     "cwd": "${fileDirname}",
+      //     "environment": [],
+      //     "externalConsole": false,
+      //     "MIMode": "lldb",
+      //     "preLaunchTask": "C/C++: clang build active file Scott",
+      //     "targetArchitecture": "arm64"
+      // },
+      {
+        "type": "lldb",
+        "name": "DEBUG ACTIVE FILE MEOW",
+        "preLaunchTask": "C/C++: clang debug build test.cc",
+        "request": "launch",
+        "cwd": "${fileDirname}",
+        "program": "sable",
+        "args": ["--input-tlsf=../benchmarks_ulb/strix_detector_2.tlsf",
+                 "-r2"
+                 ]
+        }
+  ],
+  "version": "2.0.0"
+  
 }

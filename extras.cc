@@ -40,14 +40,14 @@ boost::dynamic_bitset<> get_dead_letter_map(twa_graph_ptr g, alphabet_vec alphab
 void rename_aps_in_formula(formula & ltl, vector<string> & input_aps) {
   auto relabel_map = new std::map<formula, formula>();
   ltl = spot::relabel(ltl, Abc, relabel_map);
-  #if GEN_PAGE_BASIC  
+  IF_PAGE_BASIC {
     stringstream ss;
     for (auto & [new_ap, old_ap] : *relabel_map) {
       ss << new_ap << " = " << old_ap << endl;
     }
     cout << ss.str();
     page_code("LTL formula renaming map:", ss.str());
-  #endif
+  }
   // make new input_aps list
   auto new_input_aps = vector<string>();
   for (auto & [new_ap, old_ap] : *relabel_map) {
@@ -103,9 +103,11 @@ twa_word_ptr test_moore_kucb_intersection(twa_graph_ptr moore_machine, twa_graph
   bool we_found_counter = moore_kucb_intersection(moore_machine, ucb, k);
   cout << "done." << endl;
 
-  // if (we_found_counter == false) {
-  //   return nullptr;
-  // }
+  #if !CONFIG_REDUNDANT_CHECK_MOORE_INTERSECTION_AGAINST_SPOT
+    if (we_found_counter == false) {
+      return nullptr;
+    }
+  #endif
 
   cout << "performing moore kucb intersection (spot) ..." << endl;
   auto counter = moore_machine->intersecting_word(kucb);
@@ -180,4 +182,10 @@ bool is_valid_moore_machine(twa_graph_ptr g, bdd apmask) {
     }
   }
   return true;
+}
+
+int get_bdd_var_index(bdd_dict_ptr dict, string label) {
+  for (const auto & [f, i] : dict->var_map)
+    if (force_string(f) == label) return i;
+  throw std::runtime_error("the label '" + label + "' does not exist in the give dictionary");
 }

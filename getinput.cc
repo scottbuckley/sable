@@ -9,6 +9,13 @@ tuple<string, vector<string>> get_example_from_tlsf(const string & tlsf_path) {
   ifstream ltl_file;
   ifstream ins_file;
 
+  ltl_file.open(tlsf_path);
+  if (!ltl_file.good()) {
+    cout << "could not find/open the file \"" << tlsf_path << "\"" << endl;
+    exit(1);
+  }
+  ltl_file.close();
+
   #if (CONFIG_ALWAYS_REGENERATE_LTL)
     string command = "./make_ltl.sh " + tlsf_path;
     auto ret = system(command.c_str());

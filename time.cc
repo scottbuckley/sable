@@ -21,23 +21,23 @@ private:
   string label = "";
   unsigned graph_flag = TIMER_GRAPH_COMPONENT;
 
-  Stopwatch * addition_parent = nullptr;
-  Stopwatch * subsumption_parent = nullptr;
+  shared_ptr<Stopwatch> addition_parent = nullptr;
+  shared_ptr<Stopwatch> subsumption_parent = nullptr;
 
   void addTime(nanoseconds dur) {
     elapsed += dur;
   }
 
 public:
-  Stopwatch(string label, Stopwatch * parent = nullptr, unsigned flag = TIMER_GRAPH_COMPONENT)
+  Stopwatch(string label, shared_ptr<Stopwatch> parent = nullptr, unsigned flag = TIMER_GRAPH_COMPONENT)
     : label{label}, addition_parent{parent}, graph_flag{flag} {}
   
-  void set_subsumption_parent(Stopwatch * sp) {
+  void set_subsumption_parent(shared_ptr<Stopwatch> sp) {
     subsumption_parent = sp;
   }
 
   // set the parent
-  Stopwatch * parent(Stopwatch * p) {
+  Stopwatch * parent(shared_ptr<Stopwatch> p) {
     addition_parent = p;
     return this;
   }
@@ -131,22 +131,22 @@ public:
 
 class StopwatchSet {
 private:
-  std::unordered_map<string, Stopwatch *> timer_map = std::unordered_map<string, Stopwatch *>();
+  std::unordered_map<string, shared_ptr<Stopwatch>> timer_map = std::unordered_map<string, shared_ptr<Stopwatch>>();
   std::unordered_map<string, bool> timer_flags = std::unordered_map<string, bool>();
 public:
-  void add_timer(Stopwatch * timer) {
+  void add_timer(shared_ptr<Stopwatch> timer) {
     timer_map.insert({timer->get_label(), timer});
   }
 
   // make a timer and add it to the set
   template<class ..._Args>
-  Stopwatch * make_timer(_Args&& ...__args) {
-    Stopwatch * new_timer = new Stopwatch(__args...);
+  shared_ptr<Stopwatch> make_timer(_Args&& ...__args) {
+    shared_ptr<Stopwatch> new_timer = make_shared<Stopwatch>(__args...);
     timer_map.insert({new_timer->get_label(), new_timer});
     return new_timer;
   }
 
-  Stopwatch * getTimer(string label) const {
+  shared_ptr<Stopwatch> getTimer(string label) const {
     return timer_map.at(label);
   }
 

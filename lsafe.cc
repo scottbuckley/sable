@@ -122,7 +122,7 @@ bool fully_specify_word(twa_word_ptr word, bdd & varset) {
 // this assumes that the given counterexample is in fact a counterexample, so it will
 // eventually fail when executing on the machine "g"
 finite_word_ptr find_shortest_failing_prefix(twa_graph_ptr g, twa_word_ptr counterexample) {
-  UCB_BDD_Walker * walker = new UCB_BDD_Walker(g);
+  shared_ptr<UCB_BDD_Walker> walker = make_shared<UCB_BDD_Walker>(g);
   finite_word_ptr out = make_finite_word();
   for (bdd & letter : counterexample->prefix) {
     out->push_back(letter);
@@ -188,22 +188,31 @@ typedef stateset_ptr walk_position;
 struct PrefixTree {
   bool already_failed = false;
 
+  // note this can't be a shared_ptr, as this would cause cyclic ownership
+  // and the shared_ptr garbage collector would never delete anything.
   PrefixTree * parent = nullptr;
 
-  vector<PrefixTree*> chren;
+  vector<shared_ptr<PrefixTree>> chren;
 
   WALKER_POSITION_TYPE ucb_walk_position;
 
   int index_in_P;
   int index_in_alphabet;
 
-  btree * bt_position;
+  shared_ptr<btree> bt_position;
 
   unsigned suffixes_processed_up_to = 0;
 
-  PrefixTree(int index_in_alphabet, const unsigned letter_count, PrefixTree * parent, int index_in_P=-1) : index_in_alphabet{index_in_alphabet}, parent{parent}, index_in_P{index_in_P} {
-    chren = vector<PrefixTree *>(letter_count, nullptr);
+  PrefixTree(int index_in_alphabet, const unsigned letter_count, shared_ptr<PrefixTree> parent, int index_in_P=-1)
+  : index_in_alphabet{index_in_alphabet}
+  , parent{parent.get()}
+  , index_in_P{index_in_P} {
+    chren = vector<shared_ptr<PrefixTree>>(letter_count, nullptr); //leak
   }
+
+  // ~PrefixTree() {
+  //   cout << endl << endl << "   prefix destruction    " << endl << endl;
+  // }
 
   finite_word_ptr get_bdd_prefix(const alphabet_vec & alphabet) {
     if (index_in_alphabet == -1)
@@ -243,7 +252,7 @@ finite_word_ptr index_word_to_bdd_word(index_word_ptr word, const alphabet_vec &
   return out;
 }
 
-string dump_lsafe_state2(bdd_dict_ptr dict, alphabet_vec & alphabet, PrefixTree * ptree, vector<PrefixTree*> P, vector<index_word_ptr> S, btree * tbl) {
+string dump_lsafe_state2(bdd_dict_ptr dict, const alphabet_vec & alphabet, const shared_ptr<PrefixTree> & ptree, const vector<shared_ptr<PrefixTree>> & P, const vector<index_word_ptr> & S, const shared_ptr<btree> & tbl) {
   stringstream out;
 
   unsigned w = 3; // padding width for numeric labels
@@ -273,7 +282,7 @@ string dump_lsafe_state2(bdd_dict_ptr dict, alphabet_vec & alphabet, PrefixTree 
   return out.str();
 }
 
-void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
+void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
 
   // set up lots of timers
   auto global_closing_timer    = timers.make_timer("Table closing");
@@ -302,28 +311,29 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     auto illegal_letters = get_dead_letter_map(cobuchi, alphabet);
   init_timer->stop();
 
-
-  #if GEN_PAGE_BASIC
+  IF_PAGE_BASIC {
     page_text(to_string(ltl), "LTL");
     page_text(to_string(input_aps), "Input APs");
 
-    #if GEN_PAGE_DETAILS
+    IF_PAGE_DETAILS {
       const unsigned illegal_letter_count = illegal_letters.count();
       if (illegal_letter_count > 0) {
         stringstream ss;
         ss << illegal_letter_count << " out of the " << letter_count << " letters (" << ((illegal_letter_count * 100.0) / letter_count) << "%) are illegal." << endl;
         page_text(ss.str(), "Illegal letters");
       }
-    #endif
-
-    page_text(to_string(ltl_neg), "&not;LTL");
-    page_graph(buchi_neg, "NonDet Buchi of negated LTL");
+    }
+    IF_PAGE_DETAILS {
+      page_text(to_string(ltl_neg), "&not;LTL");
+      page_graph(buchi_neg, "NonDet Buchi of negated LTL");
+    }
     page_graph(cobuchi, "Universal CoBuchi of LTL");
     // page_text(to_string(bdd_to_formula(illegal_letters, dict)), "Illegal letters");
-  #endif
+  }
 
   auto LSafeForK = [&](unsigned k) {
     cout << "Iterating with K = " << k << endl;
+    PAUSE;
 
     // set up some local timers (which will mostly report back to the timers defined above)
     auto local_timers     = StopwatchSet();
@@ -345,9 +355,7 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     auto _ = RunOnReturn([&](){
       lsafe_k_total->stop();
       local_timers.report("  > ");
-      #if GEN_K_TIMERS
-        local_timers.draw_page_donut("Timers for K = " + to_string(k));
-      #endif
+      IF_K_TIMERS local_timers.draw_page_donut("Timers for K = " + to_string(k));
     });
 
     // expand the UCB into a kUCB
@@ -362,28 +370,29 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
       build_walker_timer->flag_ignored();
     #elif CONFIG_WALKER_TYPE == CONFIG_WALKER_TYPE_INDEXES
       build_walker_timer->start();
-        Walker<unsigned, walk_position, index_word_ptr> * walk = new Indexed_Universal_Walker(kucb, alphabet);
+        shared_ptr<Walker<unsigned, walk_position, index_word_ptr>> walk = make_shared<Indexed_Universal_Walker>(kucb, alphabet); //leak
+        // Walker<unsigned, walk_position, index_word_ptr> * walk = new Indexed_Universal_Walker(kucb, alphabet); //leak
       build_walker_timer->stop();
     #endif
     const bool init_state_accepted = !walk->failed();
 
     
     
-    #if GEN_PAGE_DETAILS
+    IF_PAGE_DETAILS {
       if (k == 0) page_heading("Starting with K = " + to_string(k));
       else    page_heading("Incrementing K to " + to_string(k));
       page_graph(kucb, "Expanded K-CoBuchi for K="+to_string(k));
-    #endif
+    }
 
     // complement the kucb (for later inclusion checks)
     // kucb_compl_timer->start();
       twa_graph_ptr kucb_complement = spot::complement(kucb);
     // kucb_compl_timer->stop();
 
-    #if GEN_PAGE_DETAILS
+    IF_PAGE_DETAILS {
       page_graph(kucb_complement, "kUCB complement");
       page_text_bool(init_state_accepted, "The empty word is accepted.", "The empty word is not accepted.");
-    #endif
+    }
 
     /* right now I am storing the prefixes in 3 different forms:
       (A) a prefixtree that keeps track of all prefixes, not just those found in P, as
@@ -392,15 +401,24 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
       (C) a btree that stores an index into B.
     */
     
-    PrefixTree * ptree = new PrefixTree(-1, letter_count, nullptr, 0); // tree representation of prefixes
+    shared_ptr<PrefixTree> ptree = make_shared<PrefixTree>(-1, letter_count, nullptr, 0); // tree representation of prefixes //leak
     ptree->ucb_walk_position = walk->get_position(); // the initial walk position
     ptree->already_failed = !init_state_accepted;
 
-    btree * bt = new btree();
+    // i think this is now taken care of by shared_ptr mechanisms.
+    // auto x = RunOnReturn([&ptree](){
+      // since ptrees contain references to eachother, I don't think
+      // the shared_ptr system will know to delete them when `ptree` goes
+      // out of scope.
+      // ptree->~PrefixTree();
+    // });
+
+    shared_ptr<btree> bt = make_shared<btree>();
     ptree->bt_position = bt->force_bool(init_state_accepted);
+    // cout << ptree->bt_position << "  " << (ptree->bt_position == nullptr) << endl;
     ptree->bt_position->set_rowid(0);
 
-    vector<PrefixTree*> P = {ptree}; // set of unique prefixes
+    vector<shared_ptr<PrefixTree>> P = {ptree}; // set of unique prefixes
     vector<index_word_ptr> S = {empty_word()}; // set of separating suffixes
 
 
@@ -434,7 +452,7 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
       
     // };
 
-    auto close_table = [&](){
+    auto close_table = [&](bool debug_here = false){
       // set up the new graph we are building.
       twa_graph_ptr H = make_twa_graph(dict);
       H->set_acceptance(acc_cond::acc_code::cobuchi());
@@ -462,8 +480,9 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
             // process it. we store the UCB walk position for this node,
             // check if it has already failed, and figure out which unique row in P
             // it is associated with (or if it's a new one).
-
-            node->chren[i] = new PrefixTree(i, letter_count, node);
+            // if (debug_here) cout << "debug A" << endl;
+            node->chren[i] = make_shared<PrefixTree>(i, letter_count, node);
+            // if (debug_here) cout << "debug B" << endl;
             child = node->chren[i];
             walk_timer->start();
               walk->set_position(node->ucb_walk_position);
@@ -480,7 +499,7 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
             if (child->already_failed) {
               // without considering any suffixes, this child fails, so we already
               // know that it will point to the sink node, which may or may not already exist.
-              btree * empty_bt = bt->force_false();
+              shared_ptr<btree> empty_bt = bt->force_false();
               child->bt_position = empty_bt;
               child->suffixes_processed_up_to = S.size();
               if (empty_bt->has_rowid()) {
@@ -496,7 +515,7 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
             } else {
               // walk through all current suffixes to figure out what the equivalent
               // row in P is (if there is one).
-              btree * btree_node = bt;
+              shared_ptr<btree> btree_node = bt;
               for (unsigned si=0; si<S.size(); ++si) {
                 walk_timer->start();
                   // reset walk to the new prefix (including the letter we are adding)
@@ -529,7 +548,7 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
             // this node already exists, but there must be new suffixes since the
             // last time it was processed, so we need to deal with new suffixes,
             // although only if it hasn't already failed.
-            btree * btree_node = child->bt_position;
+            shared_ptr<btree> btree_node = child->bt_position;
             for (unsigned si=child->suffixes_processed_up_to; si<S.size(); ++si) {
               walk_timer->start();
                 // push the walker back to the start of this child, before any suffixes are considered.
@@ -560,7 +579,7 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
           H->new_edge(pi, node->chren[i]->index_in_P, alphabet->at(i));
         }
       }
-      cout << "finished table closing." << endl;
+      // cout << "finished table closing." << endl;
       return H;
     };
 
@@ -597,16 +616,16 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     const unsigned max_iterations = 2000;
     for (unsigned i=1; i<=max_iterations; i++) {
       if (i==max_iterations) {
-        #if GEN_PAGE_DETAILS
+        IF_PAGE_DETAILS {
           page_text("stopping at " + to_string(max_iterations) + " iterations");
-        #endif
+        }
         cout << "stopping at " << max_iterations << " iterations" << endl;
       }
 
-      #if GEN_PAGE_DETAILS
+      IF_PAGE_DETAILS {
         page_heading("LSafe iteration #" + to_string(i));
         page_text("Closing table ...");
-      #endif
+      }
 
       cout << "  LSafe Iteration " << i << endl;
       // close the table
@@ -614,62 +633,62 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
       closing_timer->start();
         twa_graph_ptr H = close_table();
       closing_timer->stop();
-      #if GEN_PAGE_DETAILS
+      IF_PAGE_DETAILS {
         page_code("Hypothesis table:", dump_lsafe_state2(dict, alphabet, ptree, P, S, bt));
         page_text(to_string(H->num_states()), "Number of states");
-      #endif
-      cout << "  hypothesis number of states: " << H->num_states() << endl;
+      }
+      cout << "    hypothesis has " << H->num_states() << " states" << endl;
       // page_graph(H, "Hypothesis graph (unmerged)");
 
       // we have closed the table. now we start to solve it
       solving_timer->start();
         auto [realizable, machine] = solve_safety(H, apmap, false);
-      solving_timer->stop()->report();
+      solving_timer->stop();
 
       if (realizable) {
         highlight_strategy_vec(H, 5, 4);
-        #if GEN_PAGE_DETAILS
+        IF_PAGE_DETAILS {
           page_text("Hypothesis is realisable.");
           page_graph(H, "Strategy");
-          page_graph(machine, "Mealy machine " + to_string(machine->num_states()));
-        #endif
+          page_graph(machine, "Mealy machine (" + to_string(machine->num_states()) + " states)");
+        }
         inclusion_timerA->start();
           twa_word_ptr counterexample = machine->intersecting_word(kucb_complement);
         inclusion_timerA->stop();
         if (word_not_empty(counterexample)) {
-          #if GEN_PAGE_DETAILS
+          IF_PAGE_DETAILS {
             string orig_counterexample_string = force_string(*counterexample);
             if (fully_specify_word(counterexample, varset))
               page_text(orig_counterexample_string, "Original (symbolic) counterexample");
             page_text(force_string(*counterexample), "Counterexample");
-          #else
+          } else {
             fully_specify_word(counterexample, varset);
-          #endif
+          }
 
           finite_word_ptr finite_counterexample = find_shortest_failing_prefix(kucb, counterexample);
 
-          #if GEN_PAGE_DETAILS
+          IF_PAGE_DETAILS {
             page_text(prefix_to_string(dict, finite_counterexample), "Shortest finite counterexample");
-          #endif
+          }
 
           // ok im trying just adding the whole thing as a suffix, except the first letter.
           // page_text("Right now we are adding the entire counterexample, minus its first letter, as a suffix.");
-          #if GEN_PAGE_DETAILS
+          IF_PAGE_DETAILS {
             page_text("Adding all suffixes of the counterexample to S.");
-          #endif
+          }
           while (finite_counterexample->size()>1) {
             finite_counterexample->pop_front();
             // make a copy
             extend_table_with_suffix(bdd_word_to_index_word(finite_counterexample, alphabet, bvm, varset));
           }
-          #if GEN_PAGE_DETAILS
+          IF_PAGE_DETAILS {
             page_code("Table after accounting for counterexample:", dump_lsafe_state2(dict, alphabet, ptree, P, S, bt));
-          #endif
+          }
         } else {
-          #if GEN_PAGE_DETAILS
+          IF_PAGE_DETAILS {
             page_text("No counterexample found. The mealy machine above satisfies the kUCB.");
             page_text("Also checking against the UCB");
-          #endif
+          }
           inclusion_timerB->start();
             // this is doing something wrong i think.
             // we have our machine. we are in the REALIZABLE section of this algorithm.
@@ -677,55 +696,58 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
             twa_word_ptr new_counterexample = machine->intersecting_word(buchi_neg);
           inclusion_timerB->stop();
           if (word_not_empty(new_counterexample)) {
-            #if GEN_PAGE_DETAILS
+            IF_PAGE_DETAILS {
               page_text("This machine apparently doesn't satisfy the UCB.", "OH NO!");
               page_code("Counterexample", force_string(*new_counterexample));
               exit(1);
-            #endif
+            }
           } else {
-            #if GEN_PAGE_DETAILS
+            IF_PAGE_DETAILS {
               page_text("Also passed the Buchi test.");
-            #endif
+            }
             cout << "sanity check passed" << endl;
+            debug_check_hardcoded_solution(H, apmap);
           }
           return make_tuple(true, machine);
         }
       } else {
-        #if GEN_PAGE_DETAILS
+        IF_PAGE_DETAILS {
           page_text("Hypothesis is NOT realisable.");
           highlight_strategy_vec(H, 5, 4);
           page_graph(H, "Strategy");
           page_graph(machine, "Moore machine");
-        #endif
+          // H->merge_edges();
+          // page_graph(H, "Strategy (simplified)");
+        }
         // we just got back a moore machine. find an intersecting word with the kucb to see if it
         // gives us a positive counterexample.
         inclusion_timerC->start();
           // twa_word_ptr counterexample = machine->intersecting_word(kucb);
           twa_word_ptr counterexample = test_moore_kucb_intersection(machine, cobuchi, k, kucb);  //machine->intersecting_word(kucb);
-          cout << "meow" << endl;
         inclusion_timerC->stop()->report();
         if (word_not_empty(counterexample)) {
+          throw std::runtime_error("moore counterexample");
           fully_specify_word(counterexample, varset);
           finite_word_ptr finite_counterexample = find_shortest_failing_prefix(H, counterexample);
 
-          #if GEN_PAGE_DETAILS
+          IF_PAGE_DETAILS {
             page_text(force_string(*counterexample), "Counterexample");
             page_text(prefix_to_string(dict, finite_counterexample), "Shortest finite counterexample");
             page_text("Adding all suffixes of the counterexample to S.");
-          #endif
+          }
 
           while (finite_counterexample->size()>1) {
             finite_counterexample->pop_front();
             // make a copy
             extend_table_with_suffix(bdd_word_to_index_word(finite_counterexample, alphabet, bvm, varset));
           }
-          #if GEN_PAGE_DETAILS
+          IF_PAGE_DETAILS {
             page_code("Table after accounting for counterexample:", dump_lsafe_state2(dict, alphabet, ptree, P, S, bt));
-          #endif
+          }
         } else {
-          #if GEN_PAGE_DETAILS
+          IF_PAGE_DETAILS {
             page_text("No counterexample found. For this K, the formula is not realisable.");
-          #endif
+          }
           // now we check in general, to see if it's a total counterexample or if we need to
           // increment K.
           return make_tuple(false, machine);
@@ -741,25 +763,26 @@ void LSafe2(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
   for (unsigned k=0; k<=MAX_K; ++k) {
     auto [realisable, machine] = LSafeForK(k);
     if (realisable) {
-      #if GEN_PAGE_DETAILS
-        page_text("We have a solution for K = " + to_string(k) + ".");
-      #endif
       cout << "we have a solution" << endl;
+      IF_PAGE_BASIC {
+        page_text("We have a solution for K = " + to_string(k) + ".");
+        page_graph(machine, "Solution mealy  machine");
+      }
       return;
     } else {
       twa_word_ptr counterexample = machine->intersecting_word(buchi_neg);
       if (word_not_empty(counterexample)) {
-        #if GEN_PAGE_DETAILS
+        IF_PAGE_DETAILS {
           page_text("We have a proof of unrealisability for K = " + to_string(k));
           page_text("However this is not a proof for the general formula. We need to increment K.");
           page_text(force_string(*counterexample), "Counterexample");
-        #endif
+        }
         continue;
       } else {
-        #if GEN_PAGE_DETAILS
+        IF_PAGE_DETAILS {
           page_text("We have a proof of unrealisability for K = " + to_string(k));
           page_text("This is also a proof for the general formula. We have proven the specification to be unrealisable.");
-        #endif
+        }
         return;
       }
     }

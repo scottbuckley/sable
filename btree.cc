@@ -7,8 +7,8 @@ class btree {
 private:
   int rowid = -1;
 public:
-  struct btree * bfalse;
-  struct btree * btrue;
+  shared_ptr<btree> bfalse;
+  shared_ptr<btree> btrue;
 
   btree(unsigned d) {
     rowid = d;
@@ -25,7 +25,7 @@ public:
   }
 
   void set_rowid(unsigned data) {
-    rowid = data;
+    this->rowid = data;
   }
 
   bool is_leaf() {
@@ -61,33 +61,33 @@ public:
   }
 
   /* Return the 'true' child of this node, creating it if necessary. */
-  btree* force_true() {
+  shared_ptr<btree> force_true() {
     if (btrue) return btrue;
-    btrue = new btree();
+    btrue = make_shared<btree>();
     return btrue;
   }
 
   /* Return the 'false' child of this node, creating it if necessary. */
-  btree * force_false() {
+  shared_ptr<btree> force_false() {
     if (bfalse) return bfalse;
-    bfalse = new btree();
+    bfalse = make_shared<btree>();
     return bfalse;
   }
 
   /* Return the 'true' or 'false' child of this node, creating it if necessary. */
-  btree * force_bool(bool b) {
+  shared_ptr<btree> force_bool(bool b) {
     if (b) return force_true();
     else   return force_false();
   }
 
   typedef std::vector<bool> bpath;
-  typedef std::vector<btree*> bstack;
+  typedef std::vector<btree *> bstack;
 
   void add_at_path(bpath path, unsigned data) {
     btree * cur_node = this;
     for (bool b : path) {
-      if (b) cur_node = cur_node->force_true();
-      else   cur_node = cur_node->force_false();
+      if (b) cur_node = cur_node->force_true().get();
+      else   cur_node = cur_node->force_false().get();
     }
     cur_node->rowid = data;
   };
@@ -107,10 +107,10 @@ public:
       while (true) {
         if (bt_stack.back()->btrue) {
           bt_path.push_back(true);
-          bt_stack.push_back(bt_stack.back()->btrue);
+          bt_stack.push_back(bt_stack.back()->btrue.get());
         } else if (bt_stack.back()->bfalse) {
           bt_path.push_back(false);
-          bt_stack.push_back(bt_stack.back()->bfalse);
+          bt_stack.push_back(bt_stack.back()->bfalse.get());
         } else {
           break;
         }
@@ -124,7 +124,7 @@ public:
     
     ~BTIterator() {};
 
-    BTIterator(btree* root, const bool move_to_first = true) {
+    BTIterator(btree * root, const bool move_to_first = true) {
       bt_stack.push_back(root);
       if (move_to_first) find_first();
     }
@@ -189,7 +189,7 @@ public:
             bt_path.pop_back();
             bt_path.push_back(false);
             // add the right path to the end of the stack, and then "find_first" to get its first leaf
-            bt_stack.push_back(bt_stack.back()->bfalse);
+            bt_stack.push_back(bt_stack.back()->bfalse.get());
             find_first();
             return *this;
           }
@@ -211,7 +211,7 @@ public:
       // we got here, which means we can now go down the right-hand path
       bt_path.pop_back();
       bt_path.push_back(false);
-      bt_stack.push_back(bt_stack.back()->bfalse);
+      bt_stack.push_back(bt_stack.back()->bfalse.get());
       find_first();
       return *this;
     };
@@ -220,7 +220,7 @@ public:
       return bt_stack.back()->get_rowid();
     }
 
-    btree* get_btree() const {
+    btree * get_btree() const {
       return bt_stack.back();
     }
 
@@ -250,28 +250,28 @@ public:
   };
 };
 
-btree* btreefalse(btree* subtree) {
-  btree * out = new btree();
+shared_ptr<btree> btreefalse(shared_ptr<btree> subtree) {
+  shared_ptr<btree> out = make_shared<btree>();
   out->bfalse = subtree;
   return out;
 }
 
-btree* btreetrue(btree* subtree) {
-  btree * out = new btree();
+shared_ptr<btree> btreetrue(shared_ptr<btree> subtree) {
+  shared_ptr<btree> out = make_shared<btree>();
   out->btrue = subtree;
   return out;
 }
 
-btree* btreetrue(unsigned r) {
-  return btreetrue(new btree(r));
+shared_ptr<btree> btreetrue(unsigned r) {
+  return btreetrue(make_shared<btree>(r));
 }
 
-btree* btreefalse(unsigned r) {
-  return btreefalse(new btree(r));
+shared_ptr<btree> btreefalse(unsigned r) {
+  return btreefalse(make_shared<btree>(r));
 }
 
 // make a one-deep btree that is either left or right, depending on the boolean `b`.
-btree* btreebool(bool b, unsigned r) {
+shared_ptr<btree> btreebool(bool b, unsigned r) {
   if (b) return btreetrue(r);
   else   return btreefalse(r);
 }

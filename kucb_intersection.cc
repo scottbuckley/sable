@@ -21,7 +21,7 @@ spot::internal::const_universal_dests get_univ_or_single_edge(twa_graph_ptr g, u
 enum PartialOrderResult { equal, less, greater, incomparable };
 
 template <typename T>
-PartialOrderResult partial_order_compare_vectors(const vector<T> & vec_a, const vector<T> & vec_b) {
+PartialOrderResult partial_order_compare_vectors(const vector<T> & vec_a, const vector<T> & vec_b, const unsigned starting_idx = 0) {
   // assume for now they are equal
   PartialOrderResult result = PartialOrderResult::equal;
 
@@ -29,7 +29,7 @@ PartialOrderResult partial_order_compare_vectors(const vector<T> & vec_a, const 
   // that is fine if everything previous was lesser or equal.
   // same logic for greater.
   // as soon as you have both greater and lesser, they are incomparible.
-  for (unsigned i=0; i<vec_a.size(); ++i) {
+  for (unsigned i=starting_idx; i<vec_a.size(); ++i) {
     auto ai = vec_a[i];
     auto bi = vec_b[i];
     if (ai < bi) {
@@ -49,10 +49,16 @@ PartialOrderResult partial_order_compare_vectors(const vector<T> & vec_a, const 
 PartialOrderResult add_counting_function(const counting_fn & new_cf, vector<counting_fn> & cfs) {
   // we assume that no cfs in the existing set subsume eachother, so we can
   // just check the new one against existing ones.
+
+  // the index at which we start actually comparing counting functions.
+  // we use 1 because we use the first element to store which edge the cf
+  // came from.
+  const constexpr unsigned starting_idx = 1;
+
   const unsigned size = cfs.size();
   for (unsigned i=0; i<size; ++i) {
     const counting_fn & cf = cfs[i];
-    auto po = partial_order_compare_vectors(new_cf, cf);
+    auto po = partial_order_compare_vectors(new_cf, cf, starting_idx);
     if (po == PartialOrderResult::incomparable) {
       // these are incomparable, so we need to check the next one.
       continue;
@@ -80,12 +86,22 @@ PartialOrderResult add_counting_function(const counting_fn & new_cf, vector<coun
 
 void print_cf(counting_fn c) {
   cout << "[";
-    for (auto x : c) {
+    for (unsigned i=1; i<c.size(); ++i) {
+      unsigned x = c[i];
       if (x == 0) cout << "_";
       else cout << (x-1);
     }
-    cout << "]" << endl;;
+    cout << "]." << endl;
 };
+
+bool cf_equal(const counting_fn & cf_a, const counting_fn & cf_b, const unsigned starting_idx=0) {
+  const unsigned cf_a_size = cf_a.size();
+  if (cf_a_size != cf_b.size()) return false;
+  for (unsigned i=starting_idx; i<cf_a_size; i++) {
+    if (cf_a[i] != cf_b[i]) return false;
+  }
+  return true;
+}
 
 bool moore_kucb_intersection(twa_graph_ptr moore, twa_graph_ptr ucb, unsigned k) {
   constexpr bool print_debug = false;
@@ -98,6 +114,8 @@ bool moore_kucb_intersection(twa_graph_ptr moore, twa_graph_ptr ucb, unsigned k)
   auto moore_sink_idx_ptr = moore->get_named_prop<store_unsigned>("sink-idx");
   unsigned moore_sink_idx = moore_sink_idx_ptr->val;
 
+  DEBUG cout << " >> Moore sink index = " << moore_sink_idx << endl;
+
   const unsigned moore_size = moore->num_states();
   const unsigned ucb_size = ucb->num_states();
   auto counts = kucb_counting_fns(moore_size);
@@ -105,10 +123,13 @@ bool moore_kucb_intersection(twa_graph_ptr moore, twa_graph_ptr ucb, unsigned k)
   if (moore_sink_idx >= moore_size)
     throw std::runtime_error("we broke something...");
 
+  if (moore_sink_idx == 0)
+    throw std::runtime_error("we might have broken somethign? apparently state 0 is a sink. that is possible but not very likely.");
+
   // initial counting function
   const unsigned ucb_init_state = ucb->get_init_state_number();
   const unsigned init_state_init_count = is_accepting_state(ucb_init_state, ucb_asc) ? 2 : 1;
-  auto initial_counting_fn = counting_fn(ucb_size);
+  auto initial_counting_fn = counting_fn(ucb_size+1, 0);
   initial_counting_fn[ucb_init_state] = init_state_init_count;
 
   counts[ucb_init_state].push_back(initial_counting_fn);
@@ -143,11 +164,12 @@ bool moore_kucb_intersection(twa_graph_ptr moore, twa_graph_ptr ucb, unsigned k)
 
   // we start with a counting function, and we figure out what the next one will be,
   // given an edge condition.
-  function<counting_fn(counting_fn*, bdd)> subsequent_counting_fn = [&](counting_fn* cf, bdd cond) {
+  function<counting_fn(counting_fn &, bdd, unsigned)> subsequent_counting_fn = [&](const counting_fn & cf, bdd cond, const unsigned cf_tag) {
     DEBUG cout << "*** subseq ***" << endl;
-    auto next_cf = counting_fn(ucb_size, 0);
-    for (unsigned i=0; i<cf->size(); ++i) {
-      const unsigned cfi = (*cf)[i];
+    auto next_cf = counting_fn(ucb_size+1, 0);
+    next_cf[0] = cf_tag;
+    for (unsigned i=0; i<cf.size(); ++i) {
+      const unsigned cfi = cf[i];
       // we only progress from states that already have a count
       if (cfi == 0) continue;
       if (cfi >= kp2) {
@@ -196,7 +218,8 @@ bool moore_kucb_intersection(twa_graph_ptr moore, twa_graph_ptr ucb, unsigned k)
       for (auto cf : cf_set) {
         for (const auto & e : moore->out(mi)) {
           const bdd & cond = e.cond;
-          counting_fn next_cf = subsequent_counting_fn(&cf, cond);
+          const unsigned edge_idx = moore->edge_number(e);
+          counting_fn next_cf = subsequent_counting_fn(cf, cond, edge_idx);
           PartialOrderResult res = add_counting_function(next_cf, counts[e.dst]);
           if (res == PartialOrderResult::greater || res == PartialOrderResult::incomparable) {
             // we made some change
@@ -208,8 +231,8 @@ bool moore_kucb_intersection(twa_graph_ptr moore, twa_graph_ptr ucb, unsigned k)
     return reached_fixpoint;
   };
 
-  function<bool(counting_fn *)> is_safe = [kp1](counting_fn * cf){
-    for (const auto & cf_val : (*cf)) {
+  function<bool(counting_fn &)> is_safe = [kp1](const counting_fn & cf){
+    for (const auto & cf_val : cf) {
       if (cf_val > kp1) return false;
     }
     return true;
@@ -219,12 +242,51 @@ bool moore_kucb_intersection(twa_graph_ptr moore, twa_graph_ptr ucb, unsigned k)
   // that, at the moore sink state, we have a safe counting function.
   function<bool()> check_for_counterexample = [&](){
     vector<counting_fn> cfs = counts[moore_sink_idx];
-    for (auto cf : cfs) {
-      if (is_safe(&cf)) {
-        return true;
+    for (auto cf : cfs) if (is_safe(cf))
+      return true;
+    return false;
+  };
+
+  // given that we know we have a counterexample, actually extract it.
+  function<shared_ptr<vector<bdd>>()> extract_counterexample = [&](){
+    auto counterexample = make_shared<vector<bdd>>();
+    const auto edges = moore->edge_vector();
+    for (auto & cf : counts[moore_sink_idx]) if (is_safe(cf)) {
+      // the "final" cf we are backtracking from is the safe cf at
+      // the sink state.
+      unsigned cur_idx = moore_sink_idx;
+      counting_fn * cur_cf = &cf;
+      while (cur_idx != moore->get_init_state_number()) {
+        // get the edge that led to this cf
+        const unsigned edge_idx = (*cur_cf)[0]; 
+        const auto e = edges[edge_idx];
+        const bdd & cond = e.cond;
+        const unsigned src = e.src;
+
+        // add the appropriate bdd to (the end of) the word
+        counterexample->push_back(cond);
+
+        // take a look at the state this cf came from, and find a counting
+        // function that is a valid immediate predecessor of this cf.
+        // that must be the cf we came from.
+
+        cur_idx = src;
+        bool found = false;
+        for (auto & cf : counts[src]) {
+          const auto subseq = subsequent_counting_fn(cf, cond, edge_idx);
+          if (cf_equal(subseq, *cur_cf, 1)) {
+            // this is the predecessor
+            cur_cf = &cf;
+            found = true;
+            break;
+          }
+        }
+        if (found == false) {
+          throw std::runtime_error("didn't find predecessor cf!");
+        }
       }
     }
-    return false;
+    return counterexample;
   };
 
 
@@ -235,7 +297,8 @@ bool moore_kucb_intersection(twa_graph_ptr moore, twa_graph_ptr ucb, unsigned k)
       cout << ((i == moore_sink_idx) ? "** " : "   ") << i << ": { ";
       for (auto cf : cfs) {
         cout << "[";
-        for (auto x : cf) {
+        for (unsigned ii=1; ii<cf.size(); ++ii) {
+          unsigned x = cf[ii];
           if (x == 0) cout << "_";
           else cout << (x-1);
         }
@@ -245,11 +308,11 @@ bool moore_kucb_intersection(twa_graph_ptr moore, twa_graph_ptr ucb, unsigned k)
     }
   };
   
-  // print_current_cfs();
+  DEBUG print_current_cfs();
   unsigned max_iter = 20;
   while(true && (--max_iter > 1)) {
     const bool reached_fixpoint = take_step();
-    // print_current_cfs();
+    DEBUG print_current_cfs();
     if (reached_fixpoint) {
       // we have reached a fixpoint. this means there is no counterexample?
       cout << "reached fix point" << endl;
@@ -257,7 +320,11 @@ bool moore_kucb_intersection(twa_graph_ptr moore, twa_graph_ptr ucb, unsigned k)
     } else {
       // haven't reached a fixpoint. check if a counterexample has been found.
       if (check_for_counterexample()) {
+        auto ce = extract_counterexample();
         cout << "found a counterexample" << endl;
+        for (const auto & x : *ce) {
+          cout << "   ***   " << bdd_str(x) << endl;
+        }
         return true;
       }
     }

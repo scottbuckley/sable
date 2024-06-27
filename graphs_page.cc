@@ -1,7 +1,4 @@
 #pragma once
-#include <iostream>
-#include <fstream>
-#include <string>
 
 #include <spot/tl/parse.hh>
 #include <spot/tl/print.hh>
@@ -23,23 +20,9 @@ string generate_graph_dot(twa_graph_ptr g) {
   return out.str();
 }
 
-/*
-void generate_graph_image(twa_graph_ptr g, bool render_via_cmd, string name = "graph") {
-  ofstream outdata;
-  outdata.open(name + ".dot");
-  print_dot(outdata, g, "arf(Lato)C(#ffffaa)b");
-  outdata.close();
-  if (render_via_cmd) {
-    std::string command = "dot -Tpng " + name + ".dot -o " + name + ".png";
-    system(command.c_str());
-  }
-}
-*/
-
 ofstream page;
 
-void page_start(string heading = "") {
-  page.open("page/index.html");
+void write_page_header() {
   page << "<html><head>" << endl;
   page << "<link rel=\"stylesheet\" href=\"style.css\">" << endl;
   page << "<script src=\"include/viz-standalone.js\"></script>" << endl;
@@ -50,15 +33,31 @@ void page_start(string heading = "") {
   page << "<script src=\"include/d3-scale-chromatic.v1.min.js\"></script>" << endl;
   page << "<script src=\"include/jquery.3.7.1.min.js\"></script>" << endl;
   page << "</head><body>" << endl;
-
   page << "<script src=\"render.js\"></script>";
+}
 
+void page_start(string heading = "") {
+  const string full_report_path = "page/" + opt.report_filename;
+
+  ifstream page_test;
+  page_test.open(full_report_path);
+  if (page_test.good() && opt.report_append) {
+    // the file already exists and we're in append mode.
+    cout << "appending to existing html file" << endl;
+    page.open(full_report_path, std::ofstream::app);
+  } else {
+    // we are starting a new file, possibly overwriting what was already there.
+    page.open(full_report_path);
+    write_page_header();
+  }
+  
   if (heading.length() > 0)
     page << "<h1>" << heading << "</h1>" << endl;
 }
 
 void page_finish() {
-  page << "</body></html>" << endl;
+  if (!opt.report_append)
+    page << "</body></html>" << endl;
   page.close();
 }
 
