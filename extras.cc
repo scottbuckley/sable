@@ -24,12 +24,12 @@ bdd get_dead_letters_bdd(twa_graph_ptr g) {
   return dead_letters;
 }
 
-boost::dynamic_bitset<> get_dead_letter_map(twa_graph_ptr g, alphabet_vec alphabet) {
+boost::dynamic_bitset<> get_dead_letter_map(twa_graph_ptr g, const ap_info & apinfo) {
   bdd dead_letters = get_dead_letters_bdd(g);
   auto bitmap = boost::dynamic_bitset<>();
-  bitmap.resize(alphabet->size(), true);
-  for (unsigned i=0; i<alphabet->size(); ++i) {
-    if (bdd_implies((*alphabet)[i], dead_letters)) {
+  bitmap.resize(apinfo.letter_count, true);
+  for (unsigned i=0; i<apinfo.letter_count; ++i) {
+    if (bdd_implies(apinfo.bdd_alphabet[i], dead_letters)) {
       bitmap.reset(i);
     }
   }
@@ -143,12 +143,12 @@ twa_word_ptr test_moore_kucb_intersection(twa_graph_ptr moore_machine, twa_graph
 }
 
 // assumes no universal edges
-bool is_valid_mealy_machine(twa_graph_ptr g, bdd apmask) {
+bool is_valid_mealy_machine(twa_graph_ptr g, const ap_info & apinfo) {
   const unsigned num_states = g->num_states();
   for (unsigned s=0; s<num_states; ++s) {
     bdd input_covered = bddfalse;
     for (const auto & e : g->out(s)) {
-      bdd cond_input = bdd_existcomp(e.cond, apmask);
+      bdd cond_input = bdd_existcomp(e.cond, apinfo.bdd_input_aps);
       input_covered |= cond_input;
     }
     if (input_covered != bddtrue) {
@@ -158,12 +158,12 @@ bool is_valid_mealy_machine(twa_graph_ptr g, bdd apmask) {
   return true;
 }
 
-bool is_valid_moore_machine(twa_graph_ptr g, bdd apmask) {
+bool is_valid_moore_machine(twa_graph_ptr g, const ap_info & apinfo) {
   const unsigned num_states = g->num_states();
   for (unsigned s=0; s<num_states; ++s) {
     bdd common_input = bddtrue;
     for (const auto & e : g->out(s)) {
-      bdd cond_input = bdd_existcomp(e.cond, apmask);
+      bdd cond_input = bdd_existcomp(e.cond, apinfo.bdd_input_aps);
       common_input &= cond_input;
     }
     if (common_input == bddfalse) {
@@ -173,7 +173,7 @@ bool is_valid_moore_machine(twa_graph_ptr g, bdd apmask) {
     }
     bdd output_covered = bddfalse;
     for (const auto & e : g->out(s)) {
-      bdd cond_output = bdd_exist(e.cond, apmask);
+      bdd cond_output = bdd_exist(e.cond, apinfo.bdd_input_aps);
       output_covered |= cond_output;
     }
     if (output_covered != bddtrue) {

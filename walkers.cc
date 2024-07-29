@@ -54,16 +54,10 @@ typedef unsigned letter_index;
 /* It also treats the graph as universal - as soon as an accepting state is touched, all bets are off. */
 class Indexed_Universal_Walker : public Walker<letter_index, stateset_ptr, index_word_ptr> {
 private:
-  const unsigned num_states;
+  unsigned num_states;
   unsigned num_letters;
-  alphabet_vec alphabet;
-
-  // nullptr = failed
   stateset_ptr current_stateset;
-
   accepting_state_cache asc;
-  
-
 
   // these are used to cache the statesets stepped to on individual letters
   // from individual states.
@@ -108,14 +102,14 @@ private:
     ss_to_ssi.insert({ss, 1});
   }
 
-  void build_state_letter_stateset_cache(twa_graph_ptr g) {
+  void build_state_letter_stateset_cache(twa_graph_ptr g, const ap_info & apinfo) {
     // build a big cache of all the state sets stepped to from each state and for each letter
     for (unsigned s=0; s<g->num_states(); ++s) {
       // each state
       auto this_row = graph_table[s];
       for (unsigned l=0; l<num_letters; l++) {
         // each letter
-        auto letter_bdd = alphabet->at(l);
+        auto letter_bdd = apinfo.bdd_alphabet[l];
         auto sset = make_shared<stateset>(num_states);
         bool will_fail = false;
         for (const auto & e : g->out(s)) {
@@ -145,8 +139,9 @@ private:
   }
 
 public:
-  Indexed_Universal_Walker(twa_graph_ptr g, alphabet_vec alphabet) : num_states{g->num_states()}, alphabet{alphabet} {
-    num_letters = alphabet->size();
+  Indexed_Universal_Walker(twa_graph_ptr g, const ap_info & apinfo) {
+    num_states = g->num_states();
+    num_letters = apinfo.letter_count;
     asc = make_accepting_state_cache(g);
     // accepts_empty_word = is_accepting_state(g, g->get_init_state_number(), asc);
 
@@ -162,7 +157,7 @@ public:
 
     make_failure_stateset();
     make_initial_stateset(g->get_init_state_number());
-    build_state_letter_stateset_cache(g);
+    build_state_letter_stateset_cache(g, apinfo);
 
     reset();
   }

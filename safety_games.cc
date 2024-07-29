@@ -83,7 +83,7 @@ twa_graph_ptr highlight_strategy_vec(twa_graph_ptr& aut, int player0_color, int 
 // that for each transition, the system has a chance to react to the input to choose an output.
 // note: this version assumes that all edges are minimal unique AP configurations (as would be
 // generated from an L*-style table), and that they are also input and output complete.
-bool solve_safety_ap_game(const twa_graph_ptr& game, bdd & apmask, bool verbose = false) {
+bool solve_safety_ap_game(const twa_graph_ptr& game, const ap_info & apinfo, bool verbose = false) {
   if (game->prop_universal()) {
     // we ain't work with universal automata
     throw std::runtime_error ("solve_safety_ap_game(): arena should not be universal");
@@ -173,7 +173,7 @@ bool solve_safety_ap_game(const twa_graph_ptr& game, bdd & apmask, bool verbose 
       }
       // we are only looking at the input APs
       // cout << "unsafe:" << bdd_to_formula(unsafe_cond, game->get_dict()) << endl;
-      unsafe_cond = bdd_forallcomp(unsafe_cond, apmask);
+      unsafe_cond = bdd_forallcomp(unsafe_cond, apinfo.bdd_input_aps);
       if (verbose) {
         cout << "  - final total cond: " << bdd_to_formula(unsafe_cond, game->get_dict()) << endl;
       }
@@ -405,7 +405,7 @@ twa_graph_ptr get_strategy_machine(twa_graph_ptr input) {
 
 
 
-twa_graph_ptr minimise_mealy_machine_pre_merge(twa_graph_ptr g, const bdd & apmask, const bool specialise_sinks = true) {
+twa_graph_ptr minimise_mealy_machine_pre_merge(twa_graph_ptr g, const ap_info & apinfo, const bool specialise_sinks = true) {
 
   twa_graph_ptr output = make_twa_graph(g->get_dict());
   std::unordered_map<unsigned, unsigned> statemap;
@@ -430,7 +430,7 @@ twa_graph_ptr minimise_mealy_machine_pre_merge(twa_graph_ptr g, const bdd & apma
     bool first = true;
     bdd inputs_covered = bddfalse;
     for (const auto & e : g->out(input_s)) {
-      bdd input_cond = bdd_existcomp(e.cond, apmask);
+      bdd input_cond = bdd_existcomp(e.cond, apinfo.bdd_input_aps);
       if (bdd_implies(input_cond, inputs_covered)) {
         // this input is already covered. skip this edge
       } else {
@@ -447,7 +447,7 @@ twa_graph_ptr minimise_mealy_machine_pre_merge(twa_graph_ptr g, const bdd & apma
   return output;
 }
 
-twa_graph_ptr minimise_moore_machine_pre_merge(twa_graph_ptr g, const bdd & apmask, const bool specialise_sinks = true) {
+twa_graph_ptr minimise_moore_machine_pre_merge(twa_graph_ptr g, const ap_info & apinfo, const bool specialise_sinks = true) {
 
   twa_graph_ptr output = make_twa_graph(g->get_dict());
   std::unordered_map<unsigned, unsigned> statemap;
@@ -472,7 +472,7 @@ twa_graph_ptr minimise_moore_machine_pre_merge(twa_graph_ptr g, const bdd & apma
     bool first = true;
     bdd input_choice;
     for (const auto & e : g->out(input_s)) {
-      bdd input_cond = bdd_existcomp(e.cond, apmask);
+      bdd input_cond = bdd_existcomp(e.cond, apinfo.bdd_input_aps);
       // cout << "cond " << bdd_to_formula(e.cond, g->get_dict()) << endl;
       // cout << "input cond " << bdd_to_formula(input_cond, g->get_dict()) << endl;
       // cout << (bdd_implies(input_choice, input_cond) ? "yes" : "no") << endl;
@@ -484,7 +484,7 @@ twa_graph_ptr minimise_moore_machine_pre_merge(twa_graph_ptr g, const bdd & apma
         }
         auto new_dest = emplace_new_state(e.dst);
         if (e.cond == bddtrue) {
-          const bdd & spec_cond = bdd_satoneset(input_cond, apmask, bddtrue);
+          const bdd & spec_cond = bdd_satoneset(input_cond, apinfo.bdd_input_aps, bddtrue);
           output->new_edge(output_s, new_dest, spec_cond);
           // cout << "condition for sink: " << bdd_to_formula(spec_cond, g->get_dict()) << endl;
         } else {
@@ -543,12 +543,10 @@ twa_graph_ptr minimise_moore_machine_pre_merge(twa_graph_ptr g, const bdd & apma
 // }
 
 
-std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, ap_map apmap, bool verbose = false) {
+std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, const ap_info & apinfo, bool verbose = false) {
   bdd_dict_ptr dict = g->get_dict();
-
-  auto apmask = apmap_mask(apmap, g->get_dict());
   
-  const bool winning = solve_safety_ap_game(g, apmask, verbose);
+  const bool winning = solve_safety_ap_game(g, apinfo, verbose);
   // #if CONFIG_SOLVE_GAME_DETERMINISTIC
     // twa_graph_ptr machine = get_strategy_machine_minimised(g, apmask);
   // #else
@@ -557,12 +555,12 @@ std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, ap_map apmap, bool
 
   if (winning) {
     #if CONFIG_SOLVE_GAME_DETERMINISTIC
-      machine = minimise_mealy_machine_pre_merge(machine, apmask);
+      machine = minimise_mealy_machine_pre_merge(machine, apinfo);
     #endif
 
     machine->merge_edges(); // optional
 
-    if (!is_valid_mealy_machine(machine, apmask)) {
+    if (!is_valid_mealy_machine(machine, apinfo)) {
       cout << "Invalid mealy machine was created." << endl;
       page_graph(machine, "This is NOT a valid mealy machine!");
       page_finish();
@@ -570,14 +568,14 @@ std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, ap_map apmap, bool
     }
   } else {
     #if CONFIG_SOLVE_GAME_DETERMINISTIC
-      machine = minimise_moore_machine_pre_merge(machine, apmask);
+      machine = minimise_moore_machine_pre_merge(machine, apinfo);
     #endif
 
     // page_graph(machine, "pre merge");
     machine->merge_edges(); // optional
     // page_graph(machine, "post merge");
 
-    if (!is_valid_moore_machine(machine, apmask)) {
+    if (!is_valid_moore_machine(machine, apinfo)) {
       cout << "OH NO it's not a valid moore you did something wrong :(";
       page_graph(machine, "This is NOT a valid moore machine!");
       page_finish();
@@ -587,6 +585,14 @@ std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, ap_map apmap, bool
 
   return {winning, machine};
 }
+
+
+
+
+
+
+
+
 
 
 
@@ -680,15 +686,14 @@ twa_graph_ptr create_shitty_hardcoded_solution(bdd_dict_ptr dict) {
 
 
 
-void debug_check_hardcoded_solution(twa_graph_ptr hyp, ap_map apmap) {
-  bdd apmask = apmap_mask(apmap, hyp->get_dict());
+void debug_check_hardcoded_solution(twa_graph_ptr hyp, const ap_info & apinfo) {
   page_text("doing some debugging ...");
   auto strat = get_strategy_machine(hyp);
   page_graph(strat, "most permissive strat");
 
   auto small_solution = create_hardcoded_solution2(hyp->get_dict());
   page_graph(small_solution, "Ideal solution");
-  if (!is_valid_mealy_machine(small_solution, apmask)) {
+  if (!is_valid_mealy_machine(small_solution, apinfo)) {
     page_text("THIS IS NOT A VALID MEALY MACHINE");
     throw std::runtime_error("The hard-coded solution is not a valid mealy machine!");
   }

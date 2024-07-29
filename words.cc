@@ -48,7 +48,7 @@ index_word_ptr copy_word(index_word_ptr word) {
 //TODO: this should be reverse-engineerable from taking a look at the APs. The unsigned that
 // represents the bdd has its bits mapping directly to those APs, so I should be able to do this
 // using that kinda method.
-index_word_ptr bdd_word_to_index_word(finite_word_ptr word, alphabet_vec alphabet, better_var_map_ptr bvm, const bdd & varset) {
+index_word_ptr bdd_word_to_index_word(finite_word_ptr word, const ap_info & apinfo) {
   // if (cached_alphabet == nullptr) cached_alphabet = alphabet;
   // else if (cached_alphabet != alphabet) throw logic_error("we are using a different alphabet now?!");
   
@@ -57,7 +57,7 @@ index_word_ptr bdd_word_to_index_word(finite_word_ptr word, alphabet_vec alphabe
     // auto found = reverse_alphabet_cache.find(bdd_letter);
     // if (found == reverse_alphabet_cache.end()) {
       // doesn't exist in the cache
-      auto index_letter = make_bits_from_bdd(bdd_letter, bvm, varset, alphabet);
+      auto index_letter = make_bits_from_bdd(bdd_letter, apinfo);
       out->push_back(index_letter);
     // }
   }

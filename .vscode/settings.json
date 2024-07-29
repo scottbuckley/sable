@@ -74,7 +74,10 @@
       "any": "cpp",
       "shared_mutex": "cpp",
       "execution": "cpp",
-      "queue": "cpp"
+      "queue": "cpp",
+      "strstream": "cpp",
+      "filesystem": "cpp",
+      "ranges": "cpp"
     },
     "lldb.displayFormat": "auto",
     "lldb.dereferencePointers": true,

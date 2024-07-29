@@ -31,7 +31,7 @@
 // #define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/full_arbiter/parametric/simple_arbiter_8.tlsf"
 
 // int setup_program_options(int ac, char* av[]) {
-int main(int ac, char* av[]) {
+int main2(int ac, char* av[]) {
   setup_program_options(ac, av);
 
   PAUSE;
@@ -76,6 +76,11 @@ int main(int ac, char* av[]) {
   IF_PAGE_TIMER timers.draw_page_donut("Timers for total execution");
   
   IF_PAGE_ANYTHING page_finish();
+  return 0;
+}
+
+int main(int ac, char* av[]) {
+  ebsc_test();
   return 0;
 }
 

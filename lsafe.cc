@@ -8,6 +8,7 @@
 #include <spot/twaalgos/complete.hh>
 #include "time.cc"
 #include "extras.cc"
+#include "select_substrategy.cc"
 
 #define MAX_K 10
 
@@ -39,41 +40,29 @@ twa_graph_ptr make_hypothesis_machine(qtset q, qtset t, Ltable tbl, bdd_dict_ptr
   return out;
 }
 
-// build an alphabet from a bdd varmap.
-// consider every combination of APs, ordered such that their presence
-// gives the bit truth of their bvm index (not their bdd var number)
-// in the vector's index.
-alphabet_vec alphabet_from_bvm(better_var_map_ptr bvm) {
-  alphabet_vec alphabet = make_shared<vector<bdd>>();
-  const unsigned num_letters = (1 << bvm->size());
-  for (unsigned i=0; i<num_letters; i++)
-    alphabet->push_back(make_bdd_from_bits(i, bvm));
-  return alphabet;
-}
-
-string index_word_to_string(bdd_dict_ptr dict, index_word_ptr fword, alphabet_vec alphabet) {
+string index_word_to_string(bdd_dict_ptr dict, index_word_ptr fword, const ap_info & apinfo) {
     stringstream out;
     bool first = true;
     out << "[";
     for (auto letter : *fword) {
         if (first) first = false;
         else out << ", ";
-        out << bdd_to_formula((*alphabet)[letter], dict);
+        out << bdd_to_formula(apinfo.bdd_alphabet[letter], dict);
     }
     out << "]";
     return out.str();
 }
 
-string dump_lsafe_state(bdd_dict_ptr dict, vector<index_word_ptr> P, vector<index_word_ptr> S, btree * tbl, alphabet_vec alphabet) {
+string dump_lsafe_state(bdd_dict_ptr dict, vector<index_word_ptr> P, vector<index_word_ptr> S, btree * tbl, const ap_info & apinfo) {
   stringstream out;
   tbl->print(out);
   out << endl << "P:" << endl;
   for (unsigned i=0; i<P.size(); ++i) {
-    out << " (" << i << ") " << index_word_to_string(dict, P[i], alphabet) << endl;
+    out << " (" << i << ") " << index_word_to_string(dict, P[i], apinfo) << endl;
   }
   out << "S:" << endl;
   for (auto s : S) {
-    out << " - " << index_word_to_string(dict, s, alphabet) << endl;
+    out << " - " << index_word_to_string(dict, s, apinfo) << endl;
   }
   return out.str();
 }
@@ -104,15 +93,15 @@ finite_word_ptr find_finite_counterexample(twa_graph_ptr machine, twa_graph_ptr 
   throw std::runtime_error("we didnt' find a counterexample after " + to_string(longest_counterexample) + " steps. something wrong here?");
 }
 
-bool fully_specify_word(twa_word_ptr word, bdd & varset) {
+bool fully_specify_word(twa_word_ptr word, const ap_info & apinfo) {
   bool change_made = false;
   for (bdd & letter : word->prefix) {
-    bdd newletter = complete_letter(letter, varset);
+    bdd newletter = complete_letter(letter, apinfo);
     if (newletter != letter) change_made = true;
     letter = newletter;
   }
   for (bdd & letter : word->cycle) {
-    bdd newletter = complete_letter(letter, varset);
+    bdd newletter = complete_letter(letter, apinfo);
     if (newletter != letter) change_made = true;
     letter = newletter;
   }
@@ -140,32 +129,11 @@ finite_word_ptr find_shortest_failing_prefix(twa_graph_ptr g, twa_word_ptr count
 twa_graph_ptr get_buchi(formula ltl) {
   translator trans;
   trans.set_type(postprocessor::Buchi);
-  trans.set_level(postprocessor::Low); // stopping optimisation for now
+  trans.set_level(postprocessor::High);
   trans.set_pref(postprocessor::SBAcc + postprocessor::Complete);
   twa_graph_ptr aut = trans.run(ltl);
   return aut;
 }
-
-ap_map make_ap_map(std::vector<string> & input_aps, spot::bdd_dict_ptr dict) {
-  auto x = dict->var_map;
-  unsigned max_bdd_index = 0;
-  
-  for (auto [a, b] : x) if (b > max_bdd_index) max_bdd_index = b;
-
-  ap_map apmap = ap_map(max_bdd_index+1, false);
-
-  for (auto [formula, varnum] : x) {
-    // std::cout << formula << ", " << varnum << endl;
-    string bdd_var_string = force_string(formula);
-    if (std::any_of(input_aps.begin(), input_aps.end(), [bdd_var_string](string s){return s==bdd_var_string;})) {
-      apmap[varnum] = true;
-    }
-  }
-  // print_vector(apmap);
-  return apmap;
-}
-
-
 
 
 #define CONFIG_WALKER_TYPE_BDDS 0
@@ -214,11 +182,11 @@ struct PrefixTree {
   //   cout << endl << endl << "   prefix destruction    " << endl << endl;
   // }
 
-  finite_word_ptr get_bdd_prefix(const alphabet_vec & alphabet) {
+  finite_word_ptr get_bdd_prefix(const ap_info & apinfo) {
     if (index_in_alphabet == -1)
       return make_finite_word();
-    finite_word_ptr prev = parent->get_bdd_prefix(alphabet);
-    prev->push_back((*alphabet)[index_in_alphabet]);
+    finite_word_ptr prev = parent->get_bdd_prefix(apinfo);
+    prev->push_back(apinfo.bdd_alphabet[index_in_alphabet]);
     return prev;
   }
 
@@ -245,14 +213,14 @@ struct PrefixTree {
   }
 };
 
-finite_word_ptr index_word_to_bdd_word(index_word_ptr word, const alphabet_vec & alphabet) {
+finite_word_ptr index_word_to_bdd_word(index_word_ptr word, const ap_info & apinfo) {
   auto out = make_finite_word();
   for (auto it=word->begin(); it!=word->end(); ++it)
-    out->push_back(alphabet->at(*it));
+    out->push_back(apinfo.bdd_alphabet[*it]);
   return out;
 }
 
-string dump_lsafe_state2(bdd_dict_ptr dict, const alphabet_vec & alphabet, const shared_ptr<PrefixTree> & ptree, const vector<shared_ptr<PrefixTree>> & P, const vector<index_word_ptr> & S, const shared_ptr<btree> & tbl) {
+string dump_lsafe_state2(bdd_dict_ptr dict, const ap_info & apinfo, const shared_ptr<PrefixTree> & ptree, const vector<shared_ptr<PrefixTree>> & P, const vector<index_word_ptr> & S, const shared_ptr<btree> & tbl) {
   stringstream out;
 
   unsigned w = 3; // padding width for numeric labels
@@ -262,12 +230,12 @@ string dump_lsafe_state2(bdd_dict_ptr dict, const alphabet_vec & alphabet, const
 
   out << endl << "Prefixes:" << endl;
   for (unsigned i=0; i<P.size(); ++i) {
-    out << pad_number(i, w) << ": " << prefix_to_string(dict, P[i]->get_bdd_prefix(alphabet)) << endl;
+    out << pad_number(i, w) << ": " << prefix_to_string(dict, P[i]->get_bdd_prefix(apinfo)) << endl;
   }
 
   out << endl << "Suffixes:" << endl;
   for (unsigned i=0; i<S.size(); ++i) {
-    out << pad_number(i, w) << ": " << prefix_to_string(dict, index_word_to_bdd_word(S[i], alphabet)) << endl;
+    out << pad_number(i, w) << ": " << prefix_to_string(dict, index_word_to_bdd_word(S[i], apinfo)) << endl;
   }
 
   // out << "P size: " << P_size << endl << endl;
@@ -300,15 +268,11 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     formula ltl_neg = formula::Not(ltl);
     twa_graph_ptr buchi_neg = get_buchi(ltl_neg);
     twa_graph_ptr cobuchi = dualize_to_univ_coBuchi(buchi_neg);
-    ap_map apmap = make_ap_map(input_aps, cobuchi->get_dict());
     bdd_dict_ptr dict = cobuchi->get_dict();
-    better_var_map_ptr bvm = get_better_var_map(dict);
-    bdd varset = make_varset_bdd(bvm);
-    alphabet_vec alphabet = alphabet_from_bvm(bvm);
-    unsigned const letter_count = alphabet->size();
+    const ap_info apinfo = ap_info(dict, input_aps);
     const unsigned h_fin_set = 0;
 
-    auto illegal_letters = get_dead_letter_map(cobuchi, alphabet);
+    auto illegal_letters = get_dead_letter_map(cobuchi, apinfo);
   init_timer->stop();
 
   IF_PAGE_BASIC {
@@ -319,7 +283,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
       const unsigned illegal_letter_count = illegal_letters.count();
       if (illegal_letter_count > 0) {
         stringstream ss;
-        ss << illegal_letter_count << " out of the " << letter_count << " letters (" << ((illegal_letter_count * 100.0) / letter_count) << "%) are illegal." << endl;
+        ss << illegal_letter_count << " out of the " << apinfo.letter_count << " letters (" << ((illegal_letter_count * 100.0) / apinfo.letter_count) << "%) are illegal." << endl;
         page_text(ss.str(), "Illegal letters");
       }
     }
@@ -370,8 +334,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
       build_walker_timer->flag_ignored();
     #elif CONFIG_WALKER_TYPE == CONFIG_WALKER_TYPE_INDEXES
       build_walker_timer->start();
-        shared_ptr<Walker<unsigned, walk_position, index_word_ptr>> walk = make_shared<Indexed_Universal_Walker>(kucb, alphabet); //leak
-        // Walker<unsigned, walk_position, index_word_ptr> * walk = new Indexed_Universal_Walker(kucb, alphabet); //leak
+        shared_ptr<Walker<unsigned, walk_position, index_word_ptr>> walk = make_shared<Indexed_Universal_Walker>(kucb, apinfo);
       build_walker_timer->stop();
     #endif
     const bool init_state_accepted = !walk->failed();
@@ -401,7 +364,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
       (C) a btree that stores an index into B.
     */
     
-    shared_ptr<PrefixTree> ptree = make_shared<PrefixTree>(-1, letter_count, nullptr, 0); // tree representation of prefixes //leak
+    shared_ptr<PrefixTree> ptree = make_shared<PrefixTree>(-1, apinfo.letter_count, nullptr, 0); // tree representation of prefixes
     ptree->ucb_walk_position = walk->get_position(); // the initial walk position
     ptree->already_failed = !init_state_accepted;
 
@@ -452,13 +415,12 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
       
     // };
 
-    auto close_table = [&](bool debug_here = false){
+    auto close_table = [&](bdd & most_recent_counterexample_first_letter){
       // set up the new graph we are building.
       twa_graph_ptr H = make_twa_graph(dict);
       H->set_acceptance(acc_cond::acc_code::cobuchi());
       H->prop_state_acc(true);
 
-      // if (P.size() > 1000) throw std::runtime_error("This hypothesis is getting out of control!");
       for (int pi=0; pi<P.size(); ++pi) {
         auto node = P[pi];
 
@@ -471,56 +433,90 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
           // if this node is already failing, then it is the sink state. Give
           // it a universal accepting edge to itself.
           H->new_acc_edge(pi, pi, bddtrue, true);
-        } else for (unsigned i=0; i<letter_count; ++i) {
-          // do nothing if it already exists. right now we assume that all existing
-          // nodes have all current suffixes processed.
-          auto child = node->chren[i];
-          if (child == nullptr) {
-            // this child hasn't yet been considered. create it and
-            // process it. we store the UCB walk position for this node,
-            // check if it has already failed, and figure out which unique row in P
-            // it is associated with (or if it's a new one).
-            // if (debug_here) cout << "debug A" << endl;
-            node->chren[i] = make_shared<PrefixTree>(i, letter_count, node);
-            // if (debug_here) cout << "debug B" << endl;
-            child = node->chren[i];
-            walk_timer->start();
-              walk->set_position(node->ucb_walk_position);
-              #if WALKER_TAKES_BDD
-                const bdd & step_param = (*alphabet)[i];
-              #else
-                const unsigned & step_param = i;
-              #endif
-              auto child_walk_position = walk->step(step_param)->get_position();
-              child->ucb_walk_position = child_walk_position;
-              child->already_failed = walk->failed();
-            walk_timer->stop();
+        } else {
+        
+          auto iterate_over_letter = [&](unsigned i){
+            // do nothing if it already exists. right now we assume that all existing
+            // nodes have all current suffixes processed.
+            auto child = node->chren[i];
+            if (child == nullptr) {
+              // this child hasn't yet been considered. create it and
+              // process it. we store the UCB walk position for this node,
+              // check if it has already failed, and figure out which unique row in P
+              // it is associated with (or if it's a new one).
+              // if (debug_here) cout << "debug A" << endl;
+              node->chren[i] = make_shared<PrefixTree>(i, apinfo.letter_count, node);
+              // if (debug_here) cout << "debug B" << endl;
+              child = node->chren[i];
+              walk_timer->start();
+                walk->set_position(node->ucb_walk_position);
+                #if WALKER_TAKES_BDD
+                  const bdd & step_param = (*alphabet)[i];
+                #else
+                  const unsigned & step_param = i;
+                #endif
+                auto child_walk_position = walk->step(step_param)->get_position();
+                child->ucb_walk_position = child_walk_position;
+                child->already_failed = walk->failed();
+              walk_timer->stop();
 
-            if (child->already_failed) {
-              // without considering any suffixes, this child fails, so we already
-              // know that it will point to the sink node, which may or may not already exist.
-              shared_ptr<btree> empty_bt = bt->force_false();
-              child->bt_position = empty_bt;
-              child->suffixes_processed_up_to = S.size();
-              if (empty_bt->has_rowid()) {
-                // we already have an empty row. point to it.
-                child->index_in_P = empty_bt->get_rowid();
+              if (child->already_failed) {
+                // without considering any suffixes, this child fails, so we already
+                // know that it will point to the sink node, which may or may not already exist.
+                shared_ptr<btree> empty_bt = bt->force_false();
+                child->bt_position = empty_bt;
+                child->suffixes_processed_up_to = S.size();
+                if (empty_bt->has_rowid()) {
+                  // we already have an empty row. point to it.
+                  child->index_in_P = empty_bt->get_rowid();
+                } else {
+                  // this is now the new empty row. add it to P, and the btree.
+                  unsigned new_index = P.size();
+                  empty_bt->set_rowid(new_index);
+                  child->index_in_P = new_index;
+                  P.push_back(child);
+                }
               } else {
-                // this is now the new empty row. add it to P, and the btree.
-                unsigned new_index = P.size();
-                empty_bt->set_rowid(new_index);
-                child->index_in_P = new_index;
-                P.push_back(child);
+                // walk through all current suffixes to figure out what the equivalent
+                // row in P is (if there is one).
+                shared_ptr<btree> btree_node = bt;
+                for (unsigned si=0; si<S.size(); ++si) {
+                  walk_timer->start();
+                    // reset walk to the new prefix (including the letter we are adding)
+                    if (i!=0) walk->set_position(child_walk_position);
+                    // traverse the btree to store the suffix bits for this prefix
+                    #if WALKER_TAKES_BDD
+                      const auto & walk_param = index_word_to_bdd_word(S[si], alphabet);
+                    #else
+                      const index_word_ptr & walk_param = S[si];
+                    #endif
+                    const bool accepted = !(walk->walk(walk_param)->failed());
+                  walk_timer->stop();
+                  btree_node = btree_node->force_bool(accepted);
+                }
+                child->suffixes_processed_up_to = S.size();
+                child->bt_position = btree_node;
+                // check if there's an existing row in P for these suffix bits.
+                if (btree_node->has_rowid()) {
+                  child->index_in_P = btree_node->get_rowid();
+                } else {
+                  // we have discovered a unique new row. Add it to P etc.
+                  // note to self: we already know this is not a sink node.
+                  int new_index = P.size();
+                  btree_node->set_rowid(new_index);
+                  child->index_in_P = new_index;
+                  P.push_back(child);
+                }
               }
-            } else {
-              // walk through all current suffixes to figure out what the equivalent
-              // row in P is (if there is one).
-              shared_ptr<btree> btree_node = bt;
-              for (unsigned si=0; si<S.size(); ++si) {
+            } else if (!child->already_failed && child->suffixes_processed_up_to < S.size()) {
+              // this node already exists, but there must be new suffixes since the
+              // last time it was processed, so we need to deal with new suffixes,
+              // although only if it hasn't already failed.
+              shared_ptr<btree> btree_node = child->bt_position;
+              for (unsigned si=child->suffixes_processed_up_to; si<S.size(); ++si) {
                 walk_timer->start();
-                  // reset walk to the new prefix (including the letter we are adding)
-                  if (i!=0) walk->set_position(child_walk_position);
-                  // traverse the btree to store the suffix bits for this prefix
+                  // push the walker back to the start of this child, before any suffixes are considered.
+                  walk->set_position(child->ucb_walk_position);
                   #if WALKER_TAKES_BDD
                     const auto & walk_param = index_word_to_bdd_word(S[si], alphabet);
                   #else
@@ -537,46 +533,22 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
                 child->index_in_P = btree_node->get_rowid();
               } else {
                 // we have discovered a unique new row. Add it to P etc.
-                // note to self: we already know this is not a sink node.
+                // note to self: at this point we already know it's not a sink node.
                 int new_index = P.size();
                 btree_node->set_rowid(new_index);
                 child->index_in_P = new_index;
                 P.push_back(child);
               }
             }
-          } else if (!child->already_failed && child->suffixes_processed_up_to < S.size()) {
-            // this node already exists, but there must be new suffixes since the
-            // last time it was processed, so we need to deal with new suffixes,
-            // although only if it hasn't already failed.
-            shared_ptr<btree> btree_node = child->bt_position;
-            for (unsigned si=child->suffixes_processed_up_to; si<S.size(); ++si) {
-              walk_timer->start();
-                // push the walker back to the start of this child, before any suffixes are considered.
-                walk->set_position(child->ucb_walk_position);
-                #if WALKER_TAKES_BDD
-                  const auto & walk_param = index_word_to_bdd_word(S[si], alphabet);
-                #else
-                  const index_word_ptr & walk_param = S[si];
-                #endif
-                const bool accepted = !(walk->walk(walk_param)->failed());
-              walk_timer->stop();
-              btree_node = btree_node->force_bool(accepted);
-            }
-            child->suffixes_processed_up_to = S.size();
-            child->bt_position = btree_node;
-            // check if there's an existing row in P for these suffix bits.
-            if (btree_node->has_rowid()) {
-              child->index_in_P = btree_node->get_rowid();
-            } else {
-              // we have discovered a unique new row. Add it to P etc.
-              // note to self: at this point we already know it's not a sink node.
-              int new_index = P.size();
-              btree_node->set_rowid(new_index);
-              child->index_in_P = new_index;
-              P.push_back(child);
-            }
+            H->new_edge(pi, node->chren[i]->index_in_P, apinfo.bdd_alphabet[i]);
+          };
+          if (most_recent_counterexample_first_letter != bdd_false()) {
+            unsigned first_check_letter_idx = make_bits_from_bdd(most_recent_counterexample_first_letter, apinfo);
+            iterate_over_letter(first_check_letter_idx);
           }
-          H->new_edge(pi, node->chren[i]->index_in_P, alphabet->at(i));
+          for (unsigned i=0; i<apinfo.letter_count; ++i) {
+            iterate_over_letter(i);
+          }
         }
       }
       // cout << "finished table closing." << endl;
@@ -613,6 +585,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     };
 
 
+    bdd most_recent_counterexample_first_letter = bdd_false();
     const unsigned max_iterations = 2000;
     for (unsigned i=1; i<=max_iterations; i++) {
       if (i==max_iterations) {
@@ -631,10 +604,10 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
       // close the table
       
       closing_timer->start();
-        twa_graph_ptr H = close_table();
+        twa_graph_ptr H = close_table(most_recent_counterexample_first_letter);
       closing_timer->stop();
       IF_PAGE_DETAILS {
-        page_code("Hypothesis table:", dump_lsafe_state2(dict, alphabet, ptree, P, S, bt));
+        page_code("Hypothesis table:", dump_lsafe_state2(dict, apinfo, ptree, P, S, bt));
         page_text(to_string(H->num_states()), "Number of states");
       }
       cout << "    hypothesis has " << H->num_states() << " states" << endl;
@@ -642,7 +615,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
 
       // we have closed the table. now we start to solve it
       solving_timer->start();
-        auto [realizable, machine] = solve_safety(H, apmap, false);
+        auto [realizable, machine] = solve_safety(H, apinfo, false);
       solving_timer->stop();
 
       if (realizable) {
@@ -650,6 +623,10 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
         IF_PAGE_DETAILS {
           page_text("Hypothesis is realisable.");
           page_graph(H, "Strategy");
+          // debug
+          if (i == 3 && k == 2) {
+            debug_find_smaller_substrategy(H, apinfo);
+          }
           page_graph(machine, "Mealy machine (" + to_string(machine->num_states()) + " states)");
         }
         inclusion_timerA->start();
@@ -658,11 +635,11 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
         if (word_not_empty(counterexample)) {
           IF_PAGE_DETAILS {
             string orig_counterexample_string = force_string(*counterexample);
-            if (fully_specify_word(counterexample, varset))
+            if (fully_specify_word(counterexample, apinfo))
               page_text(orig_counterexample_string, "Original (symbolic) counterexample");
             page_text(force_string(*counterexample), "Counterexample");
           } else {
-            fully_specify_word(counterexample, varset);
+            fully_specify_word(counterexample, apinfo);
           }
 
           finite_word_ptr finite_counterexample = find_shortest_failing_prefix(kucb, counterexample);
@@ -676,13 +653,14 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
           IF_PAGE_DETAILS {
             page_text("Adding all suffixes of the counterexample to S.");
           }
+          most_recent_counterexample_first_letter = finite_counterexample->front();
           while (finite_counterexample->size()>1) {
             finite_counterexample->pop_front();
             // make a copy
-            extend_table_with_suffix(bdd_word_to_index_word(finite_counterexample, alphabet, bvm, varset));
+            extend_table_with_suffix(bdd_word_to_index_word(finite_counterexample, apinfo));
           }
           IF_PAGE_DETAILS {
-            page_code("Table after accounting for counterexample:", dump_lsafe_state2(dict, alphabet, ptree, P, S, bt));
+            page_code("Table after accounting for counterexample:", dump_lsafe_state2(dict, apinfo, ptree, P, S, bt));
           }
         } else {
           IF_PAGE_DETAILS {
@@ -706,7 +684,10 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
               page_text("Also passed the Buchi test.");
             }
             cout << "sanity check passed" << endl;
-            debug_check_hardcoded_solution(H, apmap);
+            // debug_check_hardcoded_solution(H, apmap);
+            // here is where we have a final (mealy) solution.
+            // i will try to re-select a smaller mealy machine from the most-permissive strategy here.
+            // debug_find_smaller_substrategy(H, apinfo);
           }
           return make_tuple(true, machine);
         }
@@ -727,7 +708,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
         inclusion_timerC->stop()->report();
         if (word_not_empty(counterexample)) {
           throw std::runtime_error("moore counterexample");
-          fully_specify_word(counterexample, varset);
+          fully_specify_word(counterexample, apinfo);
           finite_word_ptr finite_counterexample = find_shortest_failing_prefix(H, counterexample);
 
           IF_PAGE_DETAILS {
@@ -739,10 +720,10 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
           while (finite_counterexample->size()>1) {
             finite_counterexample->pop_front();
             // make a copy
-            extend_table_with_suffix(bdd_word_to_index_word(finite_counterexample, alphabet, bvm, varset));
+            extend_table_with_suffix(bdd_word_to_index_word(finite_counterexample, apinfo));
           }
           IF_PAGE_DETAILS {
-            page_code("Table after accounting for counterexample:", dump_lsafe_state2(dict, alphabet, ptree, P, S, bt));
+            page_code("Table after accounting for counterexample:", dump_lsafe_state2(dict, apinfo, ptree, P, S, bt));
           }
         } else {
           IF_PAGE_DETAILS {
