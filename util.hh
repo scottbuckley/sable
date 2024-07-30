@@ -201,17 +201,21 @@ struct shifted_range_iter {
 };
 
 //todo: benchmark this against other methods
-bool exactly_one_set_bit(unsigned bits) {
-  bool seen_1 = false;
-  if (bits == 0) return false;
-  // keep shifting until you see the first 1
-  while((bits & 0b1) != 1) {
-    bits >>= 1;
-  }
-  // shift one more time
-  bits >>= 1;
-  // the whole thing must be zero now, if there is only one set bit
-  return (bits == 0);
+// bool exactly_one_set_bit(unsigned bits) {
+//   bool seen_1 = false;
+//   if (bits == 0) return false;
+//   // keep shifting until you see the first 1
+//   while((bits & 0b1) != 1) {
+//     bits >>= 1;
+//   }
+//   // shift one more time
+//   bits >>= 1;
+//   // the whole thing must be zero now, if there is only one set bit
+//   return (bits == 0);
+// }
+
+inline bool has_single_bit(unsigned v) noexcept {
+  return v != 0 && (((v & (v - 1)) == 0));
 }
 
 template <typename T>

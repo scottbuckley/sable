@@ -65,6 +65,12 @@ struct ap_info {
   unsigned input_mask = 0;
   unsigned output_mask = 0;
 
+  ~ap_info() {
+    dict->bdd_map.clear();
+    dict->var_map.clear();
+    dict->acc_map.clear();
+  }
+
   ap_info(const bdd_dict_ptr & dict_in, std::vector<string> & input_aps)
     : dict{copy_bdd_dict_ptr(dict_in)} {
       

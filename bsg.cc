@@ -4,6 +4,11 @@
 #include <spot/twa/formula2bdd.hh>
 #include <spot/misc/minato.hh>
 
+#include <bit>
+#include <bitset>
+#include <cmath>
+#include <iostream>
+
 #define ASSERT_NOT_FALSE
 
 
@@ -386,7 +391,7 @@ public:
 
       // special case when there is only one bit of difference.
       unsigned pathy_diff;
-      if (pathy == other.pathy && (exactly_one_set_bit(pathy_diff = (truth ^ other.truth)))) {
+      if (pathy == other.pathy && (has_single_bit(pathy_diff = (truth ^ other.truth)))) {
         pathy ^= pathy_diff;
         truth &= ~pathy_diff;
         if (set_false_before_return_true) other.set_false();
@@ -420,9 +425,15 @@ public:
           // i think in this context, since we know there is an intersection but not an inclusion, it must be true?
           throw std::runtime_error("this shouldn't happen");
         }
-        other.truth |= (~truth & new_pathy);
-        other.pathy |= new_pathy;
-        return false;
+        if (has_single_bit(new_pathy)) {
+          //this is where we can do a simple subtraction
+          other.truth |= (~truth & new_pathy);
+          other.pathy |= new_pathy;
+          return false;
+        } else {
+          // throw std::runtime_error("what do i do here");
+          return false;
+        }
       }
     }
   }
@@ -699,7 +710,7 @@ private:
     for (auto it = options.begin(); it != options.end(); ++it) {
       if (it->pathy != bsc.pathy) continue;
       const unsigned truth_diff = it->truth ^ bsc.truth;
-      if (exactly_one_set_bit(truth_diff)) {
+      if (has_single_bit(truth_diff)) {
         bsc.pathy ^= truth_diff;
         bsc.truth &= bsc.pathy;
         options.erase(it);
@@ -737,30 +748,30 @@ public:
   // return TRUE iff this eBSC was modified by the disjunction,
   // FALSE if this eBSC subsumed 'other'.
   bool disj_with(BSC other) {
-    cout << "dw " << s() << "," << other.s() << endl;
+    // cout << "dw " << s() << "," << other.s() << endl;
     if (other.is_false()) return false;
     for (auto it = options.begin(); it != options.end(); ++it) {
       BSC & bsc = *it;
       if (bsc.disj_with(other)) {
         // we are done. Perhaps we will need to do a condition
         // collapse though, after one of the conditions has changed.
-        cout << "  this one changed; cond_collapse" << endl;
+        // cout << "  this one changed; cond_collapse" << endl;
         condition_collapse(bsc);
         return true;
       }
       if (other.is_false()) {
-        cout << "  got subsumed" << endl;
+        // cout << "  got subsumed" << endl;
         // the condition has been subsumed
         return false;
       }
-      cout << "  no change, no subsumption. next..." << endl;
+      // cout << "  no change, no subsumption. next..." << endl;
       // cout << "    " << other.s() << endl;
     }
     if (other.not_false()) {
-      cout << "    appending " << other.s() << endl;
+      // cout << "    appending " << other.s() << endl;
       // there is some leftover
       options.emplace_back(other);
-      cout << "      final: " << s() << endl;
+      // cout << "      final: " << s() << endl;
       return true;
     }
     assert(false); // i don't think we should ever get here.
@@ -780,7 +791,7 @@ public:
     bool changed = false;
     for (const BSC & bsc : other.options)
       if (disj_with(bsc)) changed = true;
-    cout << "finished disj and changed=" << changed << endl;
+    // cout << "finished disj and changed=" << changed << endl;
     return changed;
   }
 
@@ -993,13 +1004,26 @@ void ebsc_test() {
   const ap_info apinfo = make_fake_apinfo();
   // std::srand(std::time(nullptr));
 
+
+  auto eBSC_eq_BDD = [&](const eBSC & ebsc, const bdd & b) {
+    if (b == bdd_true())  return ebsc.is_true();
+    if (b == bdd_false()) return ebsc.is_false();
+    return !!(ebsc.to_bdd(apinfo) == b);
+  };
+
+  auto BSC_eq_BDD = [&](const BSC & bsc, const bdd & b) {
+    if (b == bdd_true())  return bsc.is_true();
+    if (b == bdd_false()) return bsc.is_false();
+    return !!(bsc.to_bdd(apinfo) == b);
+  };
+
   auto assert_disj_same = [&](const eBSC & a, const eBSC & b){
     bdd a_ = a.to_bdd(apinfo);
     bdd b_ = b.to_bdd(apinfo);
     eBSC aorb = a | b;
     bdd a_orb_ = a_ | b_;
 
-    if ((aorb).to_bdd(apinfo) != (a_orb_)) {
+    if (!eBSC_eq_BDD(aorb, a_orb_)) {
       cout << "a: " << a.s(apinfo) << endl;
       cout << "b: " << b.s(apinfo) << endl;
       cout << "a_: " << apinfo.bdd_to_string(a_) << endl;
@@ -1021,15 +1045,7 @@ void ebsc_test() {
     eBSC aorb = a & b;
     bdd a_orb_ = a_ & b_;
 
-    /*
-    a: D || A^B^D || ^AC^D
-    b: ABC || ^A^B^C^D
-    a&b: ABCD || False || False || False || False || False
-     =   ABCD
-    */
-
-    if ((aorb).to_bdd(apinfo) != (a_orb_)) {
-      
+    if (!eBSC_eq_BDD(aorb, a_orb_)) {
       cout << "a: " << a.s(apinfo) << endl;
       cout << "b: " << b.s(apinfo) << endl;
       cout << "a_: " << apinfo.bdd_to_string(a_) << endl;
@@ -1046,17 +1062,21 @@ void ebsc_test() {
   };
 
   auto assert_single_conj_same = [&](const BSC & a, const BSC & b){
+    a.check_validity();
+    b.check_validity();
     bdd a_ = a.to_bdd(apinfo);
     bdd b_ = b.to_bdd(apinfo);
     BSC aandb = a & b;
     bdd a_andb_ = a_ & b_;
 
-    if ((aandb).to_bdd(apinfo) != (a_andb_)) {
+    if (!BSC_eq_BDD(aandb, a_andb_)) {
       cout << "a: " << a.s(apinfo) << endl;
+      cout << "a.is_false(): " << a.is_false() << endl;
       cout << "b: " << b.s(apinfo) << endl;
       cout << "a_: " << apinfo.bdd_to_string(a_) << endl;
       cout << "b_: " << apinfo.bdd_to_string(b_) << endl;
       cout << "a & b: " << (a & b).s(apinfo) << endl;
+      cout << "(a & b).is_false(): " << (a & b).is_false() << endl;
       // cout << "a & b (as bdd): " << apinfo.bdd_to_string((a & b).to_bdd(apinfo)) << endl;
       cout << "a_ & b_: " << apinfo.bdd_to_string(a_ & b_) << endl;
 
@@ -1084,16 +1104,17 @@ void ebsc_test() {
     
     */
 
-   bdd aandb_bdd = aandb.to_bdd(apinfo);
 
-    bdd bii = bdd_xor(a_andb_, aandb_bdd);
+    // bdd bii = bdd_xor(a_andb_, aandb_bdd);
     
     // bdd bii = bdd_not(bdd_biimp(a_andb_, aandb.to_bdd(apinfo)));
     // int bii = bdd_implies(aandb.to_bdd(apinfo),a_andb_);
     // int bii = bdd_implies(a_andb_, aandb.to_bdd(apinfo));
-    cout << "bii: " << apinfo.bdd_to_string(bii) << endl;
+    // cout << "bii: " << apinfo.bdd_to_string(bii) << endl;
     // cout << "bii: " << bii << endl;
-    if (aandb_bdd != (a_andb_)) {
+
+    bdd aandb_bdd = aandb.to_bdd(apinfo);
+    if (!eBSC_eq_BDD(aandb, a_andb_)) {
       cout << "a: " << a.s(apinfo) << endl;
       cout << "b: " << b.s(apinfo) << endl;
       cout << "a_: " << apinfo.bdd_to_string(a_) << endl;
@@ -1113,6 +1134,7 @@ void ebsc_test() {
   // std::srand(std::time(nullptr));
   // print_vector(apinfo.dict->var_map);
 
+  std::srand(123);
   constexpr const unsigned num_tests = 50000;
   const unsigned progress_interval = 10000000;
 
