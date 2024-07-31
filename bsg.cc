@@ -305,31 +305,31 @@ public:
   }
 
 
-  void single_disj_with(const BSC & other) {
-    THIS_CANT_BE_FALSE; CANT_BE_FALSE(other);
-    if ((pathy ^ other.pathy) != 0) {
-      // there are some bits that each BSC have different
-      // pathy for - this means there's not a single BSC that
-      // can represent their disjunctions. we just return the
-      // special value false in this case.
-      set_false();
-    } else {
-      const unsigned common_pathy = pathy & other.pathy;
-      if (common_pathy != 0) {
-        // there are bits that both sides care about. if they
-        // agree, nothing needs to change, but if they differ
-        // we must stop caring about this bit.
-        const unsigned new_apathy = (truth ^ other.truth) & common_pathy;
-        pathy ^= new_apathy;
-        // we need to set truth to zero for any newly apathetic bits
-        truth &= pathy;
-      } else {
-        // this is a weird case - there is no common or uncommon pathy,
-        // meaning both are apathetic. in this case we are just true.
-        truth = 0;
-      }
-    }
-  }
+  // void single_disj_with(const BSC & other) {
+  //   THIS_CANT_BE_FALSE; CANT_BE_FALSE(other);
+  //   if ((pathy ^ other.pathy) != 0) {
+  //     // there are some bits that each BSC have different
+  //     // pathy for - this means there's not a single BSC that
+  //     // can represent their disjunctions. we just return the
+  //     // special value false in this case.
+  //     set_false();
+  //   } else {
+  //     const unsigned common_pathy = pathy & other.pathy;
+  //     if (common_pathy != 0) {
+  //       // there are bits that both sides care about. if they
+  //       // agree, nothing needs to change, but if they differ
+  //       // we must stop caring about this bit.
+  //       const unsigned new_apathy = (truth ^ other.truth) & common_pathy;
+  //       pathy ^= new_apathy;
+  //       // we need to set truth to zero for any newly apathetic bits
+  //       truth &= pathy;
+  //     } else {
+  //       // this is a weird case - there is no common or uncommon pathy,
+  //       // meaning both are apathetic. in this case we are just true.
+  //       truth = 0;
+  //     }
+  //   }
+  // }
 
   // checks whether the other BSC is included within this one.
   // that is to say any letter accepted by 'other' will also be
@@ -344,98 +344,6 @@ public:
       return true;
     }
     return false;
-  }
-
-  // Perform a single-step disjunction with the BSC 'other'.
-  // Return true iff this BSC was changed as part of the process.
-  // The result is something like "this = this - other", where possible.
-  // * If TRUE is returned, there is NEVER any left over
-  //     condition to deal with.
-  // * If FALSE is returned, 'other' is modified in-place
-  //     to be the leftover condition (which is the False BSC
-  //     if we didn't change but there's still nothing left to 
-  //     disj with). Frequently 'other' will be unchanged when
-  //     False is returned.
-  bool disj_with(BSC & other) {
-    // the semantics are clear that returning TRUE means there
-    // is no condition left over, but we may or may not want to
-    // still set 'other' to BSC_FALSE before returning TRUE.
-    constexpr bool set_false_before_return_true = false;
-    if (other.is_false()) return false;
-
-    if (pathy == 0) {
-      if (truth == 0) {
-        // we are true - we subsume whatever you throw at us.
-        other.set_false();
-        return false;
-      } else {
-        // we are false - we become whatever you throw at us.
-        assert(truth == 1);
-        pathy = other.pathy;
-        truth = other.truth;
-        if (set_false_before_return_true) other.set_false();
-        return true;
-      }
-    }
-
-    // quick check to see if we are identical. - this behaviour is covered elsewhere
-    // if (truth == other.truth && pathy == other.pathy) {
-    //   // we are identical, so we kinda subsume the other one
-    //   other.set_false();
-    //   return false;
-    // }
-
-    const unsigned common_pathy = pathy & other.pathy;
-    if ((truth & common_pathy) != (other.truth & common_pathy)) {
-      // the things we both care about are not identical: there is no intersection.
-
-      // special case when there is only one bit of difference.
-      unsigned pathy_diff;
-      if (pathy == other.pathy && (has_single_bit(pathy_diff = (truth ^ other.truth)))) {
-        pathy ^= pathy_diff;
-        truth &= ~pathy_diff;
-        if (set_false_before_return_true) other.set_false();
-        return true;
-      }
-
-      // otherwise there's nothing we can do here.
-      // we make no change to the input BSC.
-      return false;
-    } else {
-      // the things we both care about are identical - there might be stuff we can do
-
-      if (pathy == common_pathy) {
-        // the other one is more specific, so we include it. we don't need to do anything.
-        other.set_false();
-        return false;
-      } else if (other.pathy == common_pathy) {
-        // we are more specific, so the other one includes us. we assume the shape of the other one.
-        pathy = other.pathy;
-        truth = other.truth;
-        if (set_false_before_return_true) other.set_false();
-        return true;
-      } else {
-        // we know that the BSCs are not the same, don't include eachother, but do have an intersection.
-
-        // we perform a subtraction, returning (other - this).
-        // other gets smaller, we don't change.
-        const unsigned new_pathy = pathy & ~other.pathy;
-        if (new_pathy == 0) {
-          // i dont really remember why this shouldnt happen. seems probably fine to me.
-          // i think in this context, since we know there is an intersection but not an inclusion, it must be true?
-          throw std::runtime_error("this shouldn't happen");
-        }
-        if (has_single_bit(new_pathy)) {
-          //this is where we can do a simple subtraction
-          other.truth |= (~truth & new_pathy);
-          other.pathy |= new_pathy;
-          return false;
-        } else {
-          // throw std::runtime_error("what do i do here");
-          return false;
-        }
-      }
-    }
   }
 
   // mask in-place
@@ -744,38 +652,243 @@ public:
     }
   }
 
+// Perform a single-step disjunction with the BSC 'other'.
+  // Return true iff this BSC was changed as part of the process.
+  // The result is something like "this = this - other", where possible.
+  // * If TRUE is returned, there is NEVER any left over
+  //     condition to deal with.
+  // * If FALSE is returned, 'other' is modified in-place
+  //     to be the leftover condition (which is the False BSC
+  //     if we didn't change but there's still nothing left to 
+  //     disj with). Frequently 'other' will be unchanged when
+  //     False is returned.
+
+  /* Perform a "single-step" disjunction between 'bsc' and the BSC(s)
+     in 'others'. We assume that this condition is not TRUE or FALSE,
+     and that 'others' does not contain any TRUE or FALSE BSCs.
+     We return True if 'bsc' has been modified, which may or may not mean
+     there are still BSCs to move on to the following conditions.
+     We return False if we made no change to 'bsc', which may mean that
+     'others' has been modified in-place.
+  
+  */
+  bool disj_with_single(BSC & bsc, std::list<BSC> & others) {
+
+    // quick check to see if we are identical. - this behaviour is covered elsewhere
+    // if (truth == other.truth && pathy == other.pathy) {
+    //   // we are identical, so we kinda subsume the other one
+    //   other.set_false();
+    //   return false;
+    // }
+
+    bool bsc_changed = false;
+    bool other_changed = false;
+
+    bool try_again = false;
+    do {
+      for (auto it = others.begin(); it != others.end(); ++it) {
+        BSC & other = *it;
+        const unsigned common_pathy = bsc.pathy & other.pathy;
+        const unsigned truth_diff = bsc.truth ^ other.truth;
+        const unsigned common_truth_diff = truth_diff & common_pathy;
+        if (common_truth_diff) {
+          // there is no intersection, as the things we both care about
+          // are not the same.
+
+          if (has_single_bit(common_truth_diff)) {
+            if (bsc.pathy == other.pathy) {
+              // eg: ABC | AB^C = AB
+              // we have the same pathy and only one difference in truth - this
+              // is a special case that we can deal with nicely.
+              bsc.pathy ^= truth_diff;
+              bsc.truth &= ~truth_diff;
+              bsc_changed = true;
+
+              // we have subsumed 'other' - so delete it from the list.
+              others.erase(it);
+              //FIXME: do we need to again consider earlier options in 'others'?
+              // if so, i think we do it like this:
+              // try_again = true; break;
+            } else if (other.pathy == common_pathy) {
+              // eg: ABC | B^C = AB
+              cout << "i got to the weird part: " << bsc.s() << " | " << other.s() << endl;
+              // we can use 'other' to generalise 'bsc', but this will
+              // result in changing/splitting 'other' into potentially multiple
+              // new conditions though.
+              bsc.pathy ^= common_truth_diff;
+              bsc.truth &= bsc.pathy;
+              bsc_changed = true;
+
+              cout << "  new bsc: " << bsc.s() << endl;
+
+              // the bits we care about that the other condition doesn't.
+              // unsigned new_pathy = bsc.pathy ^ common_pathy;
+              // while (new_pathy) {
+              //   const unsigned np_bit = new_pathy & -new_pathy;
+              //   new_pathy ^= np_bit;
+              //   auto new_cond = BSC(other.truth | (np_bit & ~bsc.truth), other.pathy | np_bit);
+              //   cout << "    new cond: " << new_cond.s() << endl;
+              //   others.push_front(new_cond);
+              // }
+              // others.erase(it);
+            } else if (bsc.pathy == common_pathy) {
+              other.pathy ^= common_truth_diff;
+              other.truth &= other.pathy;
+              other_changed = true;
+            }
+          }
+          // if we get here, 'other' does not collide with 'bsc', and differs
+          // by more than one bit, in a way that we don't have a way to do some combining.
+          // we do nothing now; we just move on to the next condition.
+        } else {
+          // the things we care about are the same - there is some intersection.
+          if (bsc.pathy == common_pathy) {
+            // the other one is more specific, so we subsume it.
+            // NOTE: this includes the case where bsc.pathy == other.pathy
+            others.erase(it);
+          } else if (other.pathy == common_pathy) {
+            // this one is more specific - we should copy it into us.
+            bsc.pathy = other.pathy;
+            bsc.truth = other.truth;
+            bsc_changed = true;
+            others.erase(it);
+            // note: do i need to restart again? surely not, as we assumed that
+            // 'others' is totally disjunctive, so there can't be new collisions.
+          } else if (false) { // short circuiting this option
+            // now we know the conditions have an intersection, but don't subsume
+            // one another. This is a tricky case - we want to perform a kind of
+            // subtraction: other = other - this, except this might mean that
+            // there is more than one new 'other' to deal with. however, all of the
+            // new 'other's will be strictly disjunctive, so we won't need to start again.
+            
+            unsigned new_pathy = bsc.pathy & ~other.pathy;
+            if (new_pathy == 0) {
+              // this won't happen. the pathies don't include eachother but
+              // are different - there must be some 'new pathy' for this bsc.
+              throw std::runtime_error("this shouldn't happen");
+            }
+            if (has_single_bit(new_pathy)) {
+              //this is where we can do a simple subtraction
+              other.truth |= (~bsc.truth & new_pathy);
+              other.pathy |= new_pathy;
+            } else {
+              // this is the case where, to keep 'others' disjuctive with 'bsc',
+              // we need to perform a complex subtraction. 'other' will be replaced
+              // with a number of different options, which we will push to the *front*
+              // of the 'others' list, so that we don't consider them again for this
+              // particular bsc condition.
+
+              // cout << "i got to the hard part: " << other.s() << " - " << bsc.s() << endl;
+              // // cout << "new_pathy: " << new_pathy << endl;
+              // while (new_pathy) {
+              //   const unsigned np_bit = new_pathy & -new_pathy;
+              //   new_pathy ^= np_bit;
+              //   // others.push_front(BSC(other.truth | (np_bit & ~bsc.truth), other.pathy | np_bit));
+              //   // cout << "np & -np: " << np_bit << endl;
+              //   unsigned new_truth = other.truth | (np_bit & ~bsc.truth);
+              //   unsigned new_pathy = other.pathy | np_bit;
+              //   auto new_cond = BSC(new_truth, new_pathy);
+              //   cout << "  new cond: " << new_cond.s() << endl;
+              //   others.push_front(new_cond);
+              // }
+              // others.erase(it);
+
+              // throw std::runtime_error("what do i do here");
+            }
+          }
+        }
+      }
+    } while (try_again);
+    return bsc_changed;
+  }
+
+    // const unsigned common_pathy = pathy & other.pathy;
+    // if ((truth & common_pathy) != (other.truth & common_pathy)) {
+    //   // the things we both care about are not identical: there is no intersection.
+
+    //   // special case when there is only one bit of difference.
+    //   unsigned pathy_diff;
+    //   if (pathy == other.pathy && (has_single_bit(pathy_diff = (truth ^ other.truth)))) {
+    //     pathy ^= pathy_diff;
+    //     truth &= ~pathy_diff;
+    //     if (set_false_before_return_true) other.set_false();
+    //     return true;
+    //   }
+
+    //   // otherwise there's nothing we can do here.
+    //   // we make no change to the input BSC.
+    //   return false;
+    // } else {
+    //   // the things we both care about are identical - there might be stuff we can do
+
+    //   if (pathy == common_pathy) {
+    //     // the other one is more specific, so we include it. we don't need to do anything.
+    //     other.set_false();
+    //     return false;
+    //   } else if (other.pathy == common_pathy) {
+    //     // we are more specific, so the other one includes us. we assume the shape of the other one.
+    //     pathy = other.pathy;
+    //     truth = other.truth;
+    //     if (set_false_before_return_true) other.set_false();
+    //     return true;
+    //   } else {
+    //     // we know that the BSCs are not the same, don't include eachother, but do have an intersection.
+
+    //     // we perform a subtraction, returning (other - this).
+    //     // other gets smaller, we don't change.
+    //     const unsigned new_pathy = pathy & ~other.pathy;
+    //     if (new_pathy == 0) {
+    //       // i dont really remember why this shouldnt happen. seems probably fine to me.
+    //       // i think in this context, since we know there is an intersection but not an inclusion, it must be true?
+    //       throw std::runtime_error("this shouldn't happen");
+    //     }
+    //     if (has_single_bit(new_pathy)) {
+    //       //this is where we can do a simple subtraction
+    //       other.truth |= (~truth & new_pathy);
+    //       other.pathy |= new_pathy;
+    //       return false;
+    //     } else {
+    //       // throw std::runtime_error("what do i do here");
+    //       return false;
+    //     }
+    //   }
+    // }
+  // }
+
+
   // perform a proper disjunction with 'other'.
   // return TRUE iff this eBSC was modified by the disjunction,
   // FALSE if this eBSC subsumed 'other'.
-  bool disj_with(BSC other) {
+  bool disj_with(BSC other_temp) {
     // cout << "dw " << s() << "," << other.s() << endl;
-    if (other.is_false()) return false;
+    bool changed = false;
+    if (other_temp.is_false()) return false;
+    std::list<BSC> others = {other_temp};
     for (auto it = options.begin(); it != options.end(); ++it) {
       BSC & bsc = *it;
-      if (bsc.disj_with(other)) {
+      if (disj_with_single(bsc, others)) {
         // we are done. Perhaps we will need to do a condition
         // collapse though, after one of the conditions has changed.
         // cout << "  this one changed; cond_collapse" << endl;
         condition_collapse(bsc);
-        return true;
+        changed = true;
+        // return true;
       }
-      if (other.is_false()) {
-        // cout << "  got subsumed" << endl;
-        // the condition has been subsumed
-        return false;
-      }
+      // if (others.empty()) {
+      //   // cout << "  got subsumed" << endl;
+      //   // the condition has been subsumed
+      //   return false;
+      // }
       // cout << "  no change, no subsumption. next..." << endl;
       // cout << "    " << other.s() << endl;
     }
-    if (other.not_false()) {
-      // cout << "    appending " << other.s() << endl;
-      // there is some leftover
-      options.emplace_back(other);
-      // cout << "      final: " << s() << endl;
-      return true;
+    if (!others.empty()) {
+      options.insert(options.end(), others.begin(), others.end());
+      changed = true;
     }
-    assert(false); // i don't think we should ever get here.
-    return false;
+    // assert(false); // i don't think we should ever get here.
+    // return false;
+    return changed;
   }
 
   bool disj_with(const eBSC & other) {
@@ -1000,6 +1113,18 @@ eBSC random_eBSC(const unsigned & max_depth = 4, const unsigned & num_bits = 4, 
   return out;
 }
 
+eBSC vrandom_eBSC(const unsigned & max_depth = 4, const unsigned & num_bits = 4, const unsigned & perc_false = 10) {
+  eBSC out = eBSC::eBSC_false();
+  unsigned depth = 1 + random_under(max_depth);
+  while (depth-- > 0) {
+    auto bsc = random_BSC(num_bits, perc_false);
+    cout << "  adding bsc: " << bsc.s() << endl;
+    out |= bsc;
+    cout << "    is now: " << out.s() << endl;
+  }
+  return out;
+}
+
 void ebsc_test() {
   const ap_info apinfo = make_fake_apinfo();
   // std::srand(std::time(nullptr));
@@ -1042,6 +1167,7 @@ void ebsc_test() {
   auto assert_conj_same = [&](const eBSC & a, const eBSC & b){
     bdd a_ = a.to_bdd(apinfo);
     bdd b_ = b.to_bdd(apinfo);
+    cout << "--" << endl;
     eBSC aorb = a & b;
     bdd a_orb_ = a_ & b_;
 
@@ -1055,7 +1181,8 @@ void ebsc_test() {
       cout << "a_ & b_: " << apinfo.bdd_to_string(a_ & b_) << endl;
 
       cout << " *** FAILED *** " << endl;
-      exit(1);
+      // exit(1);
+      throw std::runtime_error("failed");
     } else {
       // cout << "test passed" << endl;
     }
@@ -1088,30 +1215,11 @@ void ebsc_test() {
   };
 
   auto assert_single_disj_same = [&](const BSC & a, const BSC & b){
+    cout << " --- " << endl;
     bdd a_ = a.to_bdd(apinfo);
     bdd b_ = b.to_bdd(apinfo);
     eBSC aandb = a | b;
     bdd a_andb_ = a_ | b_;
-
-    /*
-      a: ^A^BD
-      a.truth: 0001
-      a.pathy: 1101
-
-      b: ^B^C
-      b.truth: 0000
-      b.pathy: 0110
-    
-    */
-
-
-    // bdd bii = bdd_xor(a_andb_, aandb_bdd);
-    
-    // bdd bii = bdd_not(bdd_biimp(a_andb_, aandb.to_bdd(apinfo)));
-    // int bii = bdd_implies(aandb.to_bdd(apinfo),a_andb_);
-    // int bii = bdd_implies(a_andb_, aandb.to_bdd(apinfo));
-    // cout << "bii: " << apinfo.bdd_to_string(bii) << endl;
-    // cout << "bii: " << bii << endl;
 
     bdd aandb_bdd = aandb.to_bdd(apinfo);
     if (!eBSC_eq_BDD(aandb, a_andb_)) {
@@ -1122,7 +1230,7 @@ void ebsc_test() {
       cout << "a | b: " << (aandb).s(apinfo) << endl;
       cout << "a | b (as bdd): " << apinfo.bdd_to_string(aandb_bdd) << endl;
       cout << "a_ | b_: " << apinfo.bdd_to_string(a_andb_) << endl;
-      cout << "a_ zzz b_: " << apinfo.bdd_to_string(bdd_xor(a_, b_)) << endl;
+      // cout << "a_ zzz b_: " << apinfo.bdd_to_string(bdd_xor(a_, b_)) << endl;
 
       cout << " *** FAILED *** " << endl;
       exit(1);
@@ -1131,12 +1239,63 @@ void ebsc_test() {
     }
   };
 
+  auto cumulative_disj_test = [&](){
+    cout << " --- cumul --- " << endl;
+
+    eBSC cumul  = eBSC::eBSC_false();
+    auto cumul_ = cumul.to_bdd(apinfo);
+
+    while(true) {
+      auto bsc  = random_BSC();
+      auto bsc_ = bsc.to_bdd(apinfo);
+
+
+      auto prev_cumul = cumul;
+      auto prev_cumul_ = cumul_;
+
+      cumul  |= bsc;
+      cumul_ |= bsc_;
+
+      cout << " | " << bsc.s() << " = " << cumul.s() << endl;
+      cout << "                  in bdd = " << apinfo.bdd_to_string(cumul_) << endl;
+
+      if (!eBSC_eq_BDD(cumul, cumul_)) {
+        cout << "prev cumul: " << prev_cumul.s() << endl;
+        cout << "new cond:   " << bsc.s() << endl;
+        cout << "new cumul:  " << cumul.s() << endl;
+        cout << "prev cumul bdd: " << apinfo.bdd_to_string(prev_cumul_) << endl;
+        cout << "new cumul bdd:  " << apinfo.bdd_to_string(cumul_) << endl;
+
+        // cout << "a: " << a.s(apinfo) << endl;
+        // cout << "b: " << b.s(apinfo) << endl;
+        // cout << "a_: " << apinfo.bdd_to_string(a_) << endl;
+        // cout << "b_: " << apinfo.bdd_to_string(b_) << endl;
+        // cout << "a | b: " << (aandb).s(apinfo) << endl;
+        // cout << "a | b (as bdd): " << apinfo.bdd_to_string(aandb_bdd) << endl;
+        // cout << "a_ | b_: " << apinfo.bdd_to_string(a_andb_) << endl;
+
+        throw std::runtime_error("we failed :(");
+      }
+
+      if (cumul_ == bdd_true()) break;
+
+    }
+    
+  };
+
   // std::srand(std::time(nullptr));
   // print_vector(apinfo.dict->var_map);
 
   std::srand(123);
   constexpr const unsigned num_tests = 50000;
   const unsigned progress_interval = 10000000;
+
+  cout << "cumulative disj tests ..." << endl;
+  for (unsigned i=1; i<=num_tests; ++i) {
+    cumulative_disj_test();
+    if (i % progress_interval == 0) cout << i << endl;
+  }
+  cout << "cumulative disj tests passed." << endl << endl;
 
   cout << "single conj tests ..." << endl;
   for (unsigned i=1; i<=num_tests; ++i) {
@@ -1155,7 +1314,7 @@ void ebsc_test() {
 
   cout << "complex conj tests ..." << endl;
   for (unsigned i=1; i<=num_tests; ++i) {
-    assert_conj_same(random_eBSC(), random_eBSC());
+    assert_conj_same(random_eBSC(), vrandom_eBSC());
     if (i % progress_interval == 0) cout << i << endl;
   }
   cout << "complex conj tests passed." << endl << endl;
