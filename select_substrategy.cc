@@ -43,7 +43,7 @@ std::vector<boost::dynamic_bitset<>> incompatible_state_pairs(const BSG & hyp, c
         // This means I am kinda searching for combatibility (in the context of assumptions about
         // other states being compatible), but this affects how i short-circuit.
         // look at all pairs of edges.
-        eBSC cond_covered_by_connections = eBSC::eBSC_false();
+        eBSC cond_covered_by_connections = eBSC::False();
         for (const auto & e1 : hyp.out(s1)) {
           // each edge from S1
           for (const auto & e2 : hyp.out(s2)) {
@@ -183,9 +183,9 @@ void build_greedy_graph(const BSG & og, const std::vector<boost::dynamic_bitset<
 bool single_state_strategy_exists(const BSG & g, const ap_info & apinfo) {
   for (const unsigned & input_letter : apinfo.masked_input_letters) {
     // for each letter we check what outputs are globally available.
-    eBSC this_letter_outputs_avail = eBSC::eBSC_true();
+    eBSC this_letter_outputs_avail = eBSC::True();
     for (unsigned s=0; s<g.num_states(); ++s) {
-      eBSC this_state_outputs_avail = eBSC::eBSC_false();
+      eBSC this_state_outputs_avail = eBSC::False();
       for (const auto & e : g.out(s)) {
         if (e.cond.accepts_letter(input_letter))
           this_state_outputs_avail |= e.cond.masked(apinfo.output_mask);

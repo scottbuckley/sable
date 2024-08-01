@@ -222,7 +222,7 @@ template <typename T>
 void copy_list_into(const std::list<T> & from, std::list<T> & to) {
   to.clear();
   for (const auto & elem : from)
-    to.push_back(elem);
+    to.emplace_back(elem);
 }
 
 template <typename T, typename S>
