@@ -11,6 +11,8 @@
 
 #define ASSERT_NOT_FALSE
 
+#define dout if constexpr (debug) cout
+
 
 #ifdef ASSERT_NOT_FALSE
   #define CANT_BE_FALSE(bsc) assert(!bsc.is_false())
@@ -33,6 +35,7 @@ private:
   inline void set_false() {
     pathy = 0;
     truth = 1;
+    auto x = bdd_false;
   }
 
   inline void set_true() {
@@ -74,15 +77,11 @@ public:
     }
   }
 
-
-
   static std::vector<BSC> from_any_bdd(const bdd & bdd_cond, const ap_info & apinfo, BSC bsc = BSC()) {
-    constexpr bool debug_print = false;
+    constexpr bool debug = false;
     bdd b = bdd_cond;
-    if constexpr (debug_print) {
-      cout << "looking at new BDD" << endl;
-      cout << bdd_cond << endl;
-    }
+      dout << "looking at new BDD" << endl;
+      dout << bdd_cond << endl;
     while (b != bddtrue) {
       // this is the bdd var index at the top of this bdd tree
       unsigned const var = bdd_var(b);
@@ -96,7 +95,7 @@ public:
       bdd high = bdd_high(b);
       bdd low  = bdd_low(b);
 
-      if constexpr (debug_print) {
+      if constexpr (debug) {
         cout << "var " << apinfo.ind_to_string[var_idx] << endl;
         if (high == bddfalse) cout << "high false" << endl;
         else if (high == bddtrue) cout << "high true" << endl;
@@ -558,7 +557,15 @@ public:
 
 struct eBSC {
   std::list<BSC> options;
-  unsigned changes_since_minimisation = 0;
+  static const unsigned changes_between_minimisation = 5;
+  unsigned potentially_simpifiable_changes = 0;
+  unsigned growth_since_taut_check = false;
+
+  /* note: the inverse is an OVERAPPROXIMATION of the inverse.
+    The invariant is that inverse contains some truth that is not held
+    in this eBSC (if there is one). */
+  std::list<BSC> inverse;
+  
   // BSC bsc;
   // eBSC * next = nullptr;
 
@@ -573,19 +580,31 @@ struct eBSC {
 private:
   eBSC() {
     // the default eBSC is FALSE
-    changes_since_minimisation = 0;
+    inverse.emplace_back(0,0); // inverse = true
   }
 
-  void reset() {
+  void set_false() {
+    // set to FALSE
+    potentially_simpifiable_changes = 0;
     options.clear();
-    changes_since_minimisation = 0;
+    inverse.clear();
+    inverse.emplace_back(0,0); // inverse = true
+  }
+
+  void set_true() {
+    // set to FALSE
+    potentially_simpifiable_changes = 0;
+    options.clear();
+    inverse.clear();
+    options.emplace_back(0,0); // options = true
+  }
+
+  void invalidate_inverse_cache() {
+    inverse.clear();
+    inverse.emplace_back(0,0); // inverse = true
   }
 
 public:
-  // this should happen automatically
-  // ~eBSC() {
-  //   options.clear();
-  // }
 
   inline static eBSC False() {
     return eBSC();
@@ -594,6 +613,7 @@ public:
   static eBSC True() {
     eBSC out = eBSC();
     out.options.emplace_front(0,0);
+    out.inverse.clear();
     return out;
   }
 
@@ -608,71 +628,22 @@ public:
   }
 
 
+  /* attempt to minimise this  eBSC. return true if you did any
+    "hard work" in the process. */
   bool minimise() {
-    if (changes_since_minimisation > 0) {
+    if (potentially_simpifiable_changes >= changes_between_minimisation) {
       full_minimise();
-      changes_since_minimisation = 0;
       return true;
     }
     return false;
   }
 
 private:
-/*
-  // template <typename T>
-  struct indexed_list_iterator {
-    std::list<BSC>::iterator it;
-    unsigned index;
-
-    indexed_list_iterator(std::list<BSC> & l) : it{l.begin()}, index{0} {}
-
-    indexed_list_iterator(const std::list<BSC>::iterator & it, const unsigned & index)
-      : it{it}, index{index} {}
-    
-    indexed_list_iterator() {}
-
-    indexed_list_iterator next() const {
-      auto next = indexed_list_iterator(it, index);
-      ++next;
-      return next;
-    }
-
-    void operator++() {
-      ++index;
-      ++it;
-    }
-
-    void operator--() {
-      --index;
-      --it;
-    }
-
-    bool operator!=(const std::list<BSC>::iterator other) const {
-      return (it != other);
-    }
-
-    BSC * operator->() const {
-        return it.operator->();
-    }
-
-    BSC & operator*() const {
-      return *it;
-    }
-    
-  };*/
-
-  // void sort_iterators(indexed_list_iterator & it_primary, indexed_list_iterator & it_secondary) {
-  //   if (it_primary.index <= it_secondary.index) return;
-  //   auto temp = it_primary;
-  //   it_primary = it_secondary;
-  //   it_secondary = temp;
-  // }
-
   void full_minimise() {
     constexpr bool debug = false;
     assert(!is_simple_true());
-    if (debug) cout << "--- minimising " << endl;
-    if (debug) cout << s() << endl;
+    dout << "--- minimising ";
+    dout << s() << endl;
     
     auto it_primary = options.begin();
     auto it_secondary = options.begin();
@@ -690,6 +661,8 @@ private:
           continue;
         }
 
+        dout << "minim compare: " << it_primary->s() << " | " << it_secondary->s() << endl;
+
         unsigned x = it_primary->pathy + it_secondary->pathy;
 
         string pre = it_primary->s() + " vs " + it_secondary->s();
@@ -697,23 +670,24 @@ private:
 
         // making sure that primary points to the leftmost item.
         if (primary_changed || secondary_changed) {
-          if (debug) cout << "action: " << pre << endl;
-          if (debug) cout << "now:    " << it_primary->s() << " vs " << it_secondary->s() << endl;
-          if (debug) cout << s() << endl;
+          dout << "action: " << pre << endl;
+          dout << "now:    " << it_primary->s() << " vs " << it_secondary->s() << endl;
+          dout << s() << endl;
 
           if (it_primary->is_true() || it_secondary->is_true()) return set_true();
 
           if (it_secondary->is_false()) {
             options.erase(it_secondary);
             reuse_primary = true;
-            if (debug) cout << "secondary deleted" << endl;
+            dout << "secondary deleted" << endl;
+            dout << s() << endl;
             break;
           } else {
             // only one has changed - if they both changed, secondary would be false.
             assert (!primary_changed || !secondary_changed);
             if (primary_changed) {
               reuse_primary = true;
-              if (debug) cout << "primary changed" << endl;
+              dout << "primary changed" << endl;
               break;
             } else if (secondary_changed) {
               // move 'secondary' to just before 'primary'.
@@ -721,12 +695,13 @@ private:
               options.erase(it_secondary);
               --it_primary;
               reuse_primary = true;
-              if (debug) cout << "secondary changed. weird." << endl;
+              dout << "secondary changed. weird." << endl;
+              dout << s() << endl;
               break;
             }
           }
         } else {
-          // cout << "nothing" << endl;
+          dout << "no change" << endl;
         }
         ++it_secondary;
       }
@@ -742,28 +717,14 @@ private:
     }
   }
 
-  // void condition_collapse(BSC & bsc) {
-  //   for (auto it = options.begin(); it != options.end(); ++it) {
-  //     if (it->pathy != bsc.pathy) continue;
-  //     const unsigned truth_diff = it->truth ^ bsc.truth;
-  //     if (has_single_bit(truth_diff)) {
-  //       bsc.pathy ^= truth_diff;
-  //       bsc.truth &= bsc.pathy;
-  //       options.erase(it);
-  //     }
-  //   }
-  // }
-
   inline void become_copy_of(const eBSC & other) {
     copy_list_into(other.options, options);
-    changes_since_minimisation = other.changes_since_minimisation;
+    potentially_simpifiable_changes = other.potentially_simpifiable_changes;
+    copy_list_into(other.inverse, inverse);
+    growth_since_taut_check = true;
   }
 
 public:
-  // bool disj_with(const BSC & other) {
-  //   disj_with(new BSC(other));
-  // }
-
   void check_validity() const {
     unsigned cur_index = 0;
     bool has_true = false;
@@ -782,8 +743,8 @@ public:
   }
 
 private:
-  inline void note_change() noexcept {
-    ++changes_since_minimisation;
+  inline void note_simplifiable_change() noexcept {
+    ++potentially_simpifiable_changes;
   }
 
   /* Perform a "single-step" disjunction between 'bsc' and 'other'.
@@ -808,23 +769,23 @@ private:
 
       if (bsc.pathy == other.pathy) {
         // eg: ABC | AB^C = AB
-        if (debug) cout << "a" << endl;
+        dout << "a" << endl;
         bsc.pathy ^= common_truth_diff;
         bsc.truth &= bsc.pathy;
         other.set_false();
-        note_change();
+        note_simplifiable_change();
         bsc_changed = true;
         other_changed = true;
       } else if (other.pathy == common_pathy) {
         // eg: ABC | B^C = AB | B^C
-        if (debug) cout << "b" << endl;
+        dout << "b" << endl;
         bsc.pathy ^= common_truth_diff;
         bsc.truth &= bsc.pathy;
-        note_change();
+        note_simplifiable_change();
         bsc_changed = true;
       } else if (bsc.pathy == common_pathy) {
         // eg: ^B | ^ABC = ^B | ^AC
-        if (debug) cout << "c" << endl;
+        dout << "c" << endl;
         other.pathy ^= common_truth_diff;
         other.truth &= other.pathy;
         other_changed = true;
@@ -834,25 +795,217 @@ private:
       if (bsc.pathy == common_pathy) {
         // eg: A^B | A^BC = A^B
         // eg: A^BC | A^BC = A^BC
-        if (debug) cout << "d" << endl;
+        dout << "d" << endl;
         other.set_false();
         other_changed = true;
       } else if (other.pathy == common_pathy) {
         // eg: A^BC | A^B = A^B
-        if (debug) cout << "e" << endl;
+        dout << "e" << endl;
         bsc.pathy = other.pathy;
         bsc.truth = other.truth;
-        note_change();
+        note_simplifiable_change();
         other.set_false();
         bsc_changed = true;
         other_changed = true;
       } else {
-        if (debug) cout << "f" << endl;
+        dout << "f" << endl;
       }
 
       // at this point, the things we care about are the same, but we also
       // care about different things that aren't shared, and no subsumption
       // happens. we can't simplify any condition now.
+    }
+  }
+
+
+  std::list<BSC> ensure_disjoint(const BSC & bsc, const BSC & other) {
+    auto out = std::list<BSC>();
+    const unsigned common_pathy = bsc.pathy & other.pathy;
+    unsigned new_pathy = bsc.pathy & ~other.pathy;
+    assert (new_pathy != 0);
+    unsigned cumul_pathy = 0;
+    unsigned cumul_truth = 0;
+    while (new_pathy) {
+      // first set bit of new_pathy
+      const unsigned np_bit = new_pathy & -new_pathy;
+      new_pathy ^= np_bit;
+      auto new_cond = BSC(other.truth | cumul_truth | (np_bit & ~bsc.truth), other.pathy | cumul_pathy | np_bit);
+      out.emplace_back(new_cond);
+      cumul_pathy |= np_bit;
+      cumul_truth |= (np_bit & bsc.truth);
+    }  
+    return out;
+  }
+  
+
+  /* Currently-unused version that ensures that no two BSCs in 'options' overlap. */
+  void disj_with_single_strictly_disjoint(BSC & bsc, std::list<BSC> & others, bool & bsc_changed, bool & other_changed) {
+    other_changed = false;
+    bsc_changed = false;
+
+    constexpr bool debug = true;
+
+    dout << "performing single disj. bsc = " << bsc.s() << endl;
+
+    for (auto it = others.begin(); it != others.end(); ++it) {
+      auto & other = *it;
+      dout << " against: " << other.s() << endl;
+
+      const unsigned common_pathy = bsc.pathy & other.pathy;
+      const unsigned truth_diff = bsc.truth ^ other.truth;
+      const unsigned common_truth_diff = truth_diff & common_pathy;
+
+      if (common_truth_diff) {
+        dout << "c1" << endl;
+        // we disagree on at least one AP - no intersection.
+        if (has_single_bit(common_truth_diff)) {
+          dout << "s1" << endl;
+          // there is exactly one AP that we disagree on - we can do some
+          // clever stuff here.
+          if (bsc.pathy == other.pathy) {
+            dout << "sa" << endl;
+            // eg: ABC | AB^C = AB
+            bsc.pathy ^= common_truth_diff;
+            bsc.truth &= bsc.pathy;
+            others.erase(it);
+            bsc_changed = true;
+            other_changed = true;
+          // } else if (other.pathy == common_pathy) {
+          } else if (false) {
+            dout << "sb" << endl;
+            // eg: ^ABC^D | BD = ^ABC | BD <- colliding still!
+            // eg: ^ABC^D | BD = ^ABC | ABD | B^CD <- this is better
+            unsigned new_pathy = bsc.pathy ^ common_pathy;
+
+            bsc.pathy ^= common_truth_diff;
+            bsc.truth &= bsc.pathy;
+            bsc_changed = true;
+            // the bits we care about that the other condition doesn't.
+            
+          } else if (false) {
+          // } else if (bsc.pathy == common_pathy) {
+            dout << "sc" << endl;
+            // eg: ^B | ^ABC = ^B | ^AC
+            other.pathy ^= common_truth_diff;
+            other.truth &= other.pathy;
+            other_changed = true;
+          } else {
+            dout << "sd__" << endl;
+            // eg: ABC | B^CD
+            // eg: ^A^BC | BD  
+            // no simplification to be made here
+          }
+        } else {
+          dout << "s0__" << endl;
+          // there is no collision and no simple trick.
+          // nothing we can do here.
+        }
+      } else {
+        dout << "c0" << endl;
+        // there is no difference in the things we both care about, which means
+        // there is an intersection of conditions.
+        if (bsc.pathy == common_pathy) {
+          dout << "c1" << endl;
+          // 'bsc' subsumes 'other'
+          // eg: A^B | A^BC = A^B
+          // eg: A^BC | A^BC = A^BC
+          others.erase(it);
+          other_changed = true;
+        } else if (other.pathy == common_pathy) {
+          dout << "c2" << endl;
+          // 'other' subsumes 'bsc'
+          // eg: A^BC | A^B = A^B
+          bsc.pathy = other.pathy;
+          bsc.truth = other.truth;
+          others.erase(it);
+          bsc_changed = true;
+          other_changed = true;
+        } else {
+          // eg: ABC | BD = ABC | ^ABD | B^CD
+          dout << "tricky" << endl;
+          // now we know the conditions have an intersection, but don't subsume
+          // one another. This is a tricky case - we want to perform a kind of
+          // subtraction: other = other - this, except this might mean that
+          // there is more than one new 'other' to deal with. however, all of the
+          // new 'other's will be strictly disjunctive, so we won't need to start again.
+          const auto & new_conds = ensure_disjoint(bsc, other);
+          others.erase(it);
+          others.insert(others.end(), new_conds.begin(), new_conds.end());
+        }
+      }
+    }
+    if (bsc_changed || other_changed) note_simplifiable_change();
+  }
+
+  /* a version that assumes that the input conditions do not collide.
+     this is used for minimisation. */
+  void disj_with_single_disjoint_inputs(BSC & bsc, BSC & other, bool & bsc_changed, bool & other_changed) {
+    other_changed = false;
+    bsc_changed = false;
+
+    constexpr bool debug = true;
+
+    const unsigned common_pathy = bsc.pathy & other.pathy;
+    const unsigned truth_diff = bsc.truth ^ other.truth;
+    const unsigned common_truth_diff = truth_diff & common_pathy;
+
+    if (common_truth_diff == 0) {
+      cout << "this shouldn't happen" << endl;
+      cout << bsc.s() << endl;
+      cout << other.s() << endl;
+      cout << "common_pathy " << binary_string(common_pathy, 5) << endl;
+      cout << "truth_diff " << binary_string(truth_diff, 5) << endl;
+      cout << "common_truth_diuff " << binary_string(common_truth_diff, 5) << endl;
+      assert(false);
+      assert (common_truth_diff != 0);
+    }
+
+    if (!has_single_bit(common_truth_diff)) return;
+
+    // there is exactly one AP that we disagree on - we can do some
+    // clever stuff here.
+    if (bsc.pathy == other.pathy) {
+      // eg: ABC | AB^C = AB
+      bsc.pathy ^= common_truth_diff;
+      bsc.truth &= bsc.pathy;
+      bsc_changed = true;
+      other.set_false();
+      other_changed = true;
+    } else {
+      // eg: ABC | B^CD
+      // no simplification to be made here
+    }
+
+    if (bsc_changed || other_changed) note_simplifiable_change();
+  }
+
+
+  /* not currently used */
+  void disj_with_strictly_disjoint(BSC cond) {
+    cout << "performing full disj. current: " << s() << endl;
+    cout << " against " << cond.s() << endl;
+    if (cond.is_false()) return;
+    // others_top = conditions that need to be compared with all conditions.
+    std::stack<BSC> others_top;
+    others_top.push(cond);
+    bool bsc_changed = false;
+    bool other_changed = false;
+
+    while (!others_top.empty()) {
+      // others = conditions that need to be compared with following conditions.
+      std::list<BSC> others = {others_top.top()}; others_top.pop();
+
+      for (auto it = options.begin(); it != options.end(); ++it) {
+        BSC & bsc = *it;
+        disj_with_single_strictly_disjoint(bsc, others, bsc_changed, other_changed);
+        if (bsc_changed) {
+          if (bsc.is_true()) return set_true();
+          others_top.push(bsc);
+          options.erase(it);
+        }
+        if (other_changed && others.empty()) break;
+      }
+      options.insert(options.end(), others.begin(), others.end());
     }
   }
 
@@ -862,6 +1015,7 @@ public:
   // FALSE if this eBSC subsumed 'other'.
   void disj_with(BSC other) {
     if (other.is_false()) return;
+    growth_since_taut_check = true;
 
     bool start_again = true;
     bool other_changed = false;
@@ -916,58 +1070,6 @@ public:
     disj_with(other);
   }
 
-
-
-  
-  // void i_just_changed() {
-  //   // bsc.print_to_ss(cout);
-  //   // cout << " just changed. checking deeper." << endl;
-  //   // subsume a later condition if you can.
-  //   while (try_subsume_later_ebsc()) {}
-  // }
-  // 
-  // check if you can now subsume any later conditions.
-  // return true if you did.
-  // bool try_subsume_later_ebsc() {
-  //   eBSC * ebsc_to_check = next;
-  //   while (ebsc_to_check != nullptr) {
-  //     // i know for sure that all future conditions are strictly disjoint with me.
-  //     // the only way we could combine with any of those conditions is with the "off-by-one" condition.
-  //     const BSC & other_bsc = ebsc_to_check->bsc;
-  //     const unsigned truth_diff = bsc.truth ^ other_bsc.truth;
-  //     // if (bsc.pathy == other_bsc.pathy && (std::popcount(pathy_diff) == 1)) {
-  //     if (bsc.pathy =truth_diff= other_bsc.pathy && exactly_one_set_bit(truth_diff)) {
-  //       bsc.pathy ^= truth_diff;
-  //       bsc.truth &= ~truth_diff;
-  //       delete_later_ebsc(ebsc_to_check);
-  //       return true;
-  //     }
-  //     ebsc_to_check = ebsc_to_check->next;
-  //   }
-  //   return false;
-  // }
-
-  // void delete_this_disj_option() {
-  //   if (next == nullptr) {
-  //     set_false();
-  //   } else {
-  //     eBSC * temp = next;
-  //     bsc = temp->bsc;
-  //     next = temp->next;
-  //     delete temp;
-  //   }
-  // }
-
-  // void delete_later_ebsc(eBSC * ebsc_to_delete) {
-  //   assert (ebsc_to_delete != nullptr);
-  //   if (next == ebsc_to_delete) {
-  //     next = ebsc_to_delete->next;
-  //     delete ebsc_to_delete;
-  //   } else {
-  //     next->delete_later_ebsc(ebsc_to_delete);
-  //   }
-  // }
-
 public:
   string s(const ap_info & apinfo) const {
     if (is_false()) return "FALSE";
@@ -993,14 +1095,6 @@ public:
     return out.str();
   }
 
-  // void print_to_ss(ostream & out) const {
-  //   bsc.print_to_generic_ss(out);
-  //   if (next != nullptr) {
-  //     out << " || ";
-  //     next->print_to_ss(out);
-  //   }
-  // }
-
 private:
   bool is_simple_true() const {
     return options.front().is_true();
@@ -1008,22 +1102,13 @@ private:
 
 public:
 
-  bool is_true() {
+  bool check_taut() {
     minimise();
-    return options.front().is_true();
+    return full_check_tautology();
   }
 
   inline bool is_false() const {
     return options.empty();
-  }
-
-  inline void set_false() {
-    reset();
-  }
-
-  void set_true() {
-    reset();
-    options.emplace_front(BSC::True());
   }
 
   /*
@@ -1045,6 +1130,9 @@ public:
       return;
     }
 
+    // since the condition can now 'grow'.
+    invalidate_inverse_cache();
+
     for (auto it = options.begin(); it != options.end(); ++it) {
       it->conj_with(other);
       if (it->is_false()) options.erase(it);
@@ -1057,6 +1145,9 @@ public:
     if (other.is_false()) return set_false();
     if (other.is_simple_true())  return;
 
+    // since the condition can now 'grow'.
+    invalidate_inverse_cache();
+
     std::list<BSC> orig_options;
     orig_options.swap(options);
 
@@ -1067,6 +1158,84 @@ public:
           disj_with(my_option & their_option);
       }
     }
+  }
+
+  bool full_check_tautology() {
+    growth_since_taut_check = false;
+
+    std::stack<std::tuple<std::list<BSC>::iterator, std::list<BSC>::const_iterator>> check_stack;
+
+    auto opt_begin = options.cbegin();
+    auto opt_end   = options.cend();
+
+    for (auto it = inverse.begin(); it != inverse.end(); ++it)
+      check_stack.emplace(it, opt_begin);
+
+    while (!check_stack.empty()) {
+      auto [inv_it, opt_it] = check_stack.top();
+      check_stack.pop();
+      bool deleted = false;
+      for (; opt_it != opt_end; ++opt_it) {
+        const unsigned common_pathy = opt_it->pathy & inv_it->pathy;
+
+        // if there is no intersection
+        if ((opt_it->truth & common_pathy) != (inv_it->truth & common_pathy)) {
+          // eg: ABC - A^BC
+          // check the next option
+          continue;
+        }
+
+        // if they are identical or the option covers the inverse
+        if (inv_it->pathy == common_pathy) {
+          // eg: ABC - ABC
+          // eg: ABC - AB
+          // throw away this inverse; check the next inverse option
+          inverse.erase(inv_it);
+          break;
+        }
+
+        // if the inverse totally covers the option
+        // .. or if they don't cover eachother
+        // eg: BC - ABC -> ^ABC
+        // eg: AB - BC  -> ^ABC
+
+        unsigned new_pathy = opt_it->pathy & ~inv_it->pathy;
+
+        assert (new_pathy != 0);
+
+        unsigned cumul_pathy = 0;
+        unsigned cumul_truth = 0;
+        while (new_pathy) {
+          // first set bit of new_pathy
+          const unsigned np_bit = new_pathy & -new_pathy;
+          new_pathy ^= np_bit;
+          unsigned new_truth = inv_it->truth | cumul_truth | (np_bit & ~opt_it->truth);
+          unsigned new_pathy = inv_it->pathy | cumul_pathy | np_bit;
+
+          if (cumul_pathy == 0) {
+            // first one - just modify the existing one
+            inv_it->truth = new_truth;
+            inv_it->pathy = new_pathy;
+          } else {
+            // others - add them to the stack and store their iterators
+            inverse.emplace_front(new_truth, new_pathy);
+            check_stack.emplace(inverse.begin(), opt_it);
+          }
+
+          cumul_pathy |= np_bit;
+          cumul_truth |= (np_bit & opt_it->truth);
+        }
+      }
+      if (opt_it == opt_end)  {
+        // we got to the end with some counterexample.
+        // this is not a tautology.
+        return false;
+      }
+    }
+
+    // we never found a counterexample; this must be tautologous.
+    set_true();
+    return true;
   }
 
 };
@@ -1126,11 +1295,12 @@ eBSC random_eBSC(const unsigned & max_depth = 4, const unsigned & num_bits = 4, 
 eBSC vrandom_eBSC(const unsigned & max_depth = 4, const unsigned & num_bits = 4, const unsigned & perc_false = 10) {
   eBSC out = eBSC::False();
   unsigned depth = 1 + random_under(max_depth);
+  constexpr const bool debug = false;
   while (depth-- > 0) {
     auto bsc = random_BSC(num_bits, perc_false);
-    cout << "  adding bsc: " << bsc.s() << endl;
+    dout << "  adding bsc: " << bsc.s() << endl;
     out |= bsc;
-    cout << "    is now: " << out.s() << endl;
+    dout << "    is now: " << out.s() << endl;
   }
   return out;
 }
@@ -1141,7 +1311,7 @@ void ebsc_test() {
 
 
   auto eBSC_eq_BDD = [&](eBSC ebsc, const bdd & b) {
-    if (b == bdd_true())  return ebsc.is_true();
+    if (b == bdd_true())  return ebsc.check_taut();
     if (b == bdd_false()) return ebsc.is_false();
     return !!(ebsc.to_bdd(apinfo) == b);
   };
@@ -1177,7 +1347,6 @@ void ebsc_test() {
   auto assert_conj_same = [&](const eBSC & a, const eBSC & b){
     bdd a_ = a.to_bdd(apinfo);
     bdd b_ = b.to_bdd(apinfo);
-    cout << "--" << endl;
     eBSC aorb = a & b;
     bdd a_orb_ = a_ & b_;
 
@@ -1225,7 +1394,6 @@ void ebsc_test() {
   };
 
   auto assert_single_disj_same = [&](const BSC & a, const BSC & b){
-    cout << " --- " << endl;
     bdd a_ = a.to_bdd(apinfo);
     bdd b_ = b.to_bdd(apinfo);
     eBSC aandb = a | b;
@@ -1250,7 +1418,7 @@ void ebsc_test() {
   };
 
   auto cumulative_disj_test = [&](){
-    cout << " --- cumul --- " << endl;
+    // cout << " --- cumul --- " << endl;
 
     eBSC cumul  = eBSC::False();
     auto cumul_ = cumul.to_bdd(apinfo);
@@ -1284,17 +1452,18 @@ void ebsc_test() {
       cumul  |= bsc;
       cumul_ |= bsc_;
 
-      cumul.minimise();
-
-      cout << " | " << bsc.s() << " = " << cumul.s() << endl;
-      cout << "                  in bdd = " << apinfo.bdd_to_string(cumul_) << endl;
+      // cout << " | " << bsc.s() << " = " << cumul.s() << endl;
+      // cout << "                  in bdd = " << apinfo.bdd_to_string(cumul_) << endl;
 
       if (!eBSC_eq_BDD(cumul, cumul_)) {
         cout << "prev cumul: " << prev_cumul.s() << endl;
+        cout << "prev cumuldd: " << prev_cumul.potentially_simpifiable_changes << endl;
         cout << "new cond:   " << bsc.s() << endl;
         cout << "new cumul:  " << cumul.s() << endl;
         cout << "prev cumul bdd: " << apinfo.bdd_to_string(prev_cumul_) << endl;
         cout << "new cumul bdd:  " << apinfo.bdd_to_string(cumul_) << endl;
+        cout << "check_taut: " << cumul.check_taut() << endl;
+        cout << "inv first: " << cumul.inverse.front().s() << endl;
 
         // cout << "a: " << a.s(apinfo) << endl;
         // cout << "b: " << b.s(apinfo) << endl;

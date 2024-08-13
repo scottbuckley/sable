@@ -77,7 +77,7 @@ std::vector<boost::dynamic_bitset<>> incompatible_state_pairs(const BSG & hyp, c
 
             // if we have already covered all of the input language, we probably can stop looking
             // at edges.
-            if (cond_covered_by_connections.is_true()) {
+            if (cond_covered_by_connections.check_taut()) {
               // break_for_this_pair = true;
               // break;
             }
@@ -87,7 +87,7 @@ std::vector<boost::dynamic_bitset<>> incompatible_state_pairs(const BSG & hyp, c
         // we considered all edges, now we need to check if the inputs that could share
         // edges from both states to other compatible states covers all inputs. if it
         // doesn't, we are also not compatible.
-        if (!cond_covered_by_connections.is_true()) {
+        if (!cond_covered_by_connections.check_taut()) {
           // if constexpr (print_debug) cout << "found incompatibility between " << s1 << " and " << s2 << ", due to not covering all inputs" << endl;
           // if constexpr (print_debug) cout << cond_covered_by_connections.s(apinfo) << endl;
           incompat[s1][s2] = true;
