@@ -1,5 +1,6 @@
 #pragma once
 #include "common.hh"
+#include "time.cc"
 #include "safety_games.cc"
 #include <spot/twa/formula2bdd.hh>
 #include <spot/misc/minato.hh>
@@ -557,8 +558,13 @@ public:
 
 struct eBSC {
   std::list<BSC> options;
+
+  // the minimisation feature may not be needed really, since we have
+  // taut checking now. but for now we do a minimisation every now and then.
   static const unsigned changes_between_minimisation = 5;
   unsigned potentially_simpifiable_changes = 0;
+
+  // tracks whether it may be worth performing a (new) taut check.
   unsigned growth_since_taut_check = false;
 
   /* note: the inverse is an OVERAPPROXIMATION of the inverse.
@@ -641,7 +647,7 @@ public:
 private:
   void full_minimise() {
     constexpr bool debug = false;
-    assert(!is_simple_true());
+    // assert(!is_simple_true());
     dout << "--- minimising ";
     dout << s() << endl;
     
@@ -1103,8 +1109,15 @@ private:
 public:
 
   bool check_taut() {
-    minimise();
-    return full_check_tautology();
+    if (growth_since_taut_check) {
+      if (full_check_tautology()) {
+        return true;
+      } else {
+        minimise();
+        return false;
+      }
+    }
+    return is_simple_true();
   }
 
   inline bool is_false() const {
@@ -1162,6 +1175,15 @@ public:
 
   bool full_check_tautology() {
     growth_since_taut_check = false;
+    constexpr const bool debug = true;
+
+    if constexpr (debug) {
+      dout << "checking taut on " << s() << endl;
+      dout << "inv:" << endl;
+      for (const auto & inv : inverse) {
+        dout << " - " << inv.s() << endl;
+      }
+    }
 
     std::stack<std::tuple<std::list<BSC>::iterator, std::list<BSC>::const_iterator>> check_stack;
 
@@ -1180,61 +1202,82 @@ public:
 
         // if there is no intersection
         if ((opt_it->truth & common_pathy) != (inv_it->truth & common_pathy)) {
+          dout << "a" << endl;
           // eg: ABC - A^BC
           // check the next option
           continue;
         }
 
-        // if they are identical or the option covers the inverse
-        if (inv_it->pathy == common_pathy) {
-          // eg: ABC - ABC
-          // eg: ABC - AB
-          // throw away this inverse; check the next inverse option
+        // if they are identical -- we can delete this inverse
+        if (opt_it->pathy == inv_it->pathy) {
+          // eg: (inv)ABC - (opt)ABC
+          inverse.erase(inv_it);
+          break;
+        }
+
+        // reminder: the condition with the common pathy is MORE GENERAL
+
+        // the option is more general - we can delete this inverse
+        if (opt_it->pathy == common_pathy) {
+          dout << "b" << endl;
+          // eg: (inv)ABC - (opt)AB
           inverse.erase(inv_it);
           break;
         }
 
         // if the inverse totally covers the option
         // .. or if they don't cover eachother
-        // eg: BC - ABC -> ^ABC
-        // eg: AB - BC  -> ^ABC
+        // eg: (inv)AB - (opt)ABC
+        // eg: (inv)AB - (opt)BC
+
+        dout << "c" << endl;
 
         unsigned new_pathy = opt_it->pathy & ~inv_it->pathy;
 
         assert (new_pathy != 0);
 
-        unsigned cumul_pathy = 0;
-        unsigned cumul_truth = 0;
+        unsigned cumul_truth = inv_it->truth;
+        unsigned cumul_pathy = inv_it->pathy;
         while (new_pathy) {
+          dout << "x" << endl;
           // first set bit of new_pathy
           const unsigned np_bit = new_pathy & -new_pathy;
           new_pathy ^= np_bit;
-          unsigned new_truth = inv_it->truth | cumul_truth | (np_bit & ~opt_it->truth);
-          unsigned new_pathy = inv_it->pathy | cumul_pathy | np_bit;
+          unsigned new_truth = cumul_truth | (np_bit & (~opt_it->truth));
+          unsigned new_pathy = cumul_pathy | np_bit;
 
           if (cumul_pathy == 0) {
             // first one - just modify the existing one
             inv_it->truth = new_truth;
             inv_it->pathy = new_pathy;
+            // cout << "updated entry to " << inv_it->s() << endl;
           } else {
             // others - add them to the stack and store their iterators
             inverse.emplace_front(new_truth, new_pathy);
             check_stack.emplace(inverse.begin(), opt_it);
+            // cout << "added entry " << inverse.front().s() << endl;
           }
 
           cumul_pathy |= np_bit;
           cumul_truth |= (np_bit & opt_it->truth);
+          // cout << "cumul " << BSC(cumul_truth, cumul_pathy).s() << endl;
         }
       }
       if (opt_it == opt_end)  {
         // we got to the end with some counterexample.
         // this is not a tautology.
+        dout << "taut = false" << endl;
+        dout << "inv:" << endl;
+        for (const auto & inv : inverse) {
+          dout << " - " << inv.s() << endl;
+        }
         return false;
       }
     }
 
     // we never found a counterexample; this must be tautologous.
     set_true();
+    dout << "taut = true" << endl;
     return true;
   }
 
@@ -1417,53 +1460,71 @@ void ebsc_test() {
     }
   };
 
+  auto timers = StopwatchSet();
+  auto cumul_total = timers.make_timer("Cumul BSC/BDD Total");
+  cumul_total->flag_total();
+  auto convert_timer = timers.make_timer("BSC/BDD Conversion");
+  auto bdd_timer = timers.make_timer("BDD Operations");
+  auto bsc_timer = timers.make_timer("BSC Operations");
+  page_start ("eBSC Tests Debug");
+
   auto cumulative_disj_test = [&](){
-    // cout << " --- cumul --- " << endl;
+    cout << " --- cumul --- " << endl;
 
     eBSC cumul  = eBSC::False();
-    auto cumul_ = cumul.to_bdd(apinfo);
+    convert_timer->start();
+      auto cumul_ = cumul.to_bdd(apinfo);
+    convert_timer->stop();
 
     unsigned index = 0;
     while(true) {
       index++;
 
-
       BSC bsc;
-      if (index == 1) {
-        bsc = BSC(0b100, 0b111);
-      } else if (index == 2) {
-        bsc = BSC(0b0100, 0b1101);
-      } else if (index == 3) {
-        bsc = BSC(0b1001, 0b1001);
-      } else if (index == 4) {
-        bsc = BSC(0b1010, 0b1010);
-      } else {
+      // if (index == 1) {
+      //   bsc = BSC(0b100, 0b111);
+      // } else if (index == 2) {
+      //   bsc = BSC(0b0100, 0b1101);
+      // } else if (index == 3) {
+      //   bsc = BSC(0b1001, 0b1001);
+      // } else if (index == 4) {
+      //   bsc = BSC(0b1010, 0b1010);
+      // } else {
         bsc = random_BSC();
-      }
+      // }
 
-
-
-      auto bsc_ = bsc.to_bdd(apinfo);
-
+      convert_timer->start();
+        auto bsc_ = bsc.to_bdd(apinfo);
+      convert_timer->stop();
 
       auto prev_cumul = cumul;
       auto prev_cumul_ = cumul_;
 
-      cumul  |= bsc;
-      cumul_ |= bsc_;
+      bsc_timer->start();
+        cumul  |= bsc;
+        // auto cumul_pre_taut = cumul;
+        // cumul_pre_taut.potentially_simpifiable_changes = 100;
+        // cumul_pre_taut.minimise();
+        // cumul_pre_taut.check_taut();
+        if (cumul.check_taut()) cout << "MEOWMEOW" << endl;
+      bsc_timer->stop();
+
+      bdd_timer->start();
+        cumul_ |= bsc_;
+      bdd_timer->stop();
 
       // cout << " | " << bsc.s() << " = " << cumul.s() << endl;
       // cout << "                  in bdd = " << apinfo.bdd_to_string(cumul_) << endl;
 
       if (!eBSC_eq_BDD(cumul, cumul_)) {
         cout << "prev cumul: " << prev_cumul.s() << endl;
-        cout << "prev cumuldd: " << prev_cumul.potentially_simpifiable_changes << endl;
         cout << "new cond:   " << bsc.s() << endl;
         cout << "new cumul:  " << cumul.s() << endl;
+        // cout << "new cumul pre taut: " << cumul_pre_taut.s() << endl;
         cout << "prev cumul bdd: " << apinfo.bdd_to_string(prev_cumul_) << endl;
         cout << "new cumul bdd:  " << apinfo.bdd_to_string(cumul_) << endl;
         cout << "check_taut: " << cumul.check_taut() << endl;
-        cout << "inv first: " << cumul.inverse.front().s() << endl;
+        // cout << "inv first: " << cumul.inverse.front().s() << endl;
 
         // cout << "a: " << a.s(apinfo) << endl;
         // cout << "b: " << b.s(apinfo) << endl;
@@ -1490,11 +1551,15 @@ void ebsc_test() {
   const unsigned progress_interval = 10000000;
 
   cout << "cumulative disj tests ..." << endl;
+  cumul_total->start();
   for (unsigned i=1; i<=num_tests; ++i) {
     cumulative_disj_test();
     if (i % progress_interval == 0) cout << i << endl;
   }
+  cumul_total->stop();
+  timers.draw_page_donut("cumul");
   cout << "cumulative disj tests passed." << endl << endl;
+  
 
   cout << "single conj tests ..." << endl;
   for (unsigned i=1; i<=num_tests; ++i) {
@@ -1527,5 +1592,7 @@ void ebsc_test() {
   cout << "complex disj tests passed." << endl << endl;
   
   cout << "passed " << num_tests << " tests." << endl;
+
+  page_finish();
   
 }
