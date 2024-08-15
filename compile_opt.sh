@@ -1,0 +1,1 @@
+clang++ -std=c++17 -I/Users/scott/usr/include -I/opt/homebrew/Cellar/boost/1.85.0/include -L/opt/homebrew/Cellar/boost/1.85.0/lib -L/Users/scott/usr/lib sable.cc -lspot -lbddx -lboost_program_options -o sable

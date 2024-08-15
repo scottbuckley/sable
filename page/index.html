@@ -9,3 +9,19 @@
 <script src="include/jquery.3.7.1.min.js"></script>
 </head><body>
 <script src="render.js"></script><h1>eBSC Tests Debug</h1>
+<div><p><b>cumul:</b><br><span class="donut-thing" id="donut_1"></span>
+<script>
+let values_1 = [["BDD Operations",117975391,"117 ms"],["BSC Truth Checks",317694164,"317 ms"],["BSC Operations",430932944,"430 ms"],["[unmeasured]",1114553960,"1 sec"]];
+render_donut('donut_1', values_1);
+</script></p></div>
+<div><p><b>single conj:</b><br><span class="donut-thing" id="donut_2"></span>
+<script>
+let values_2 = [["Simple BSC Operations",1772115,"1 ms"],["Simple BDD Operations",1789754,"1 ms"],["[unmeasured]",24160840,"24 ms"]];
+render_donut('donut_2', values_2);
+</script></p></div>
+<div><p><b>compound conj:</b><br><span class="donut-thing" id="donut_3"></span>
+<script>
+let values_3 = [["BDD Operations",5896262,"5 ms"],["BSC Operations",107794570,"107 ms"],["[unmeasured]",341642918,"341 ms"]];
+render_donut('donut_3', values_3);
+</script></p></div>
+</body></html>
