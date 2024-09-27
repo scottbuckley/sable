@@ -300,16 +300,16 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     PAUSE;
 
     // set up some local timers (which will mostly report back to the timers defined above)
-    auto local_timers     = StopwatchSet();
-    auto inclusion_timerA = local_timers.make_timer("Inclusion Check Instance (Moore intersects kUCB complement)", global_inclusion_timer);
-    auto inclusion_timerB = local_timers.make_timer("Inclusion Check Instance (Sanity check)", global_inclusion_timer);
-    auto inclusion_timerC = local_timers.make_timer("Inclusion Check Instance (Moore intersects kUCB)", global_inclusion_timer);
-    auto solving_timer    = local_timers.make_timer("Safety Game Solving Instance", global_solving_timer);
+    auto local_timers       = StopwatchSet();
+    auto inclusion_timerA   = local_timers.make_timer("Inclusion Check Instance (Moore intersects kUCB complement)", global_inclusion_timer);
+    auto inclusion_timerB   = local_timers.make_timer("Inclusion Check Instance (Sanity check)", global_inclusion_timer);
+    auto inclusion_timerC   = local_timers.make_timer("Inclusion Check Instance (Moore intersects kUCB)", global_inclusion_timer);
+    auto solving_timer      = local_timers.make_timer("Safety Game Solving Instance", global_solving_timer);
     // auto kucb_compl_timer = local_timers.make_timer("KUCB Complementing Instance", global_kucb_compl_timer);
-    auto walk_timer       = local_timers.make_timer("Walking Instance", global_walk_timer);
-    auto build_walker_timer    = local_timers.make_timer("Building Walker", global_walk_building_timer);
-    auto closing_timer    = local_timers.make_timer("Table Closing Instance", global_closing_timer);
-    auto lsafe_k_total    = local_timers.make_timer("Total for K", nullptr, TIMER_GRAPH_TOTAL);
+    auto walk_timer         = local_timers.make_timer("Walking Instance", global_walk_timer);
+    auto build_walker_timer = local_timers.make_timer("Building Walker", global_walk_building_timer);
+    auto closing_timer      = local_timers.make_timer("Table Closing Instance", global_closing_timer);
+    auto lsafe_k_total      = local_timers.make_timer("Total for K", nullptr, TIMER_GRAPH_TOTAL);
     walk_timer->set_subsumption_parent(closing_timer);
     // auto walk_timer = new Stopwatch("meow"); // so it's not used
 
@@ -687,7 +687,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
             // debug_check_hardcoded_solution(H, apmap);
             // here is where we have a final (mealy) solution.
             // i will try to re-select a smaller mealy machine from the most-permissive strategy here.
-            // debug_find_smaller_substrategy(H, apinfo);
+            debug_find_smaller_substrategy(H, apinfo);
           }
           return make_tuple(true, machine);
         }

@@ -32,7 +32,8 @@
         "cwd": "${fileDirname}",
         "program": "sable",
         "args": ["--input-tlsf=../benchmarks_ulb/strix_detector_2.tlsf",
-                 "-r2"
+                 "-r2",
+                 "--report-time=2"
                  ]
         }
   ],

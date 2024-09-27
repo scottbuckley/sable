@@ -6,6 +6,7 @@
 #include "safety_games.cc"
 #include "getinput.cc"
 #include "extras.cc"
+#include "tests.cc"
 
 #include <spot/tl/dot.hh>
 #include <spot/twaalgos/dualize.hh>
@@ -31,7 +32,7 @@
 // #define EXAMPLE_FILE "../benchmarks_syntcomp/tlsf/full_arbiter/parametric/simple_arbiter_8.tlsf"
 
 // int setup_program_options(int ac, char* av[]) {
-int main2(int ac, char* av[]) {
+int main(int ac, char* av[]) {
   setup_program_options(ac, av);
 
   PAUSE;
@@ -79,7 +80,7 @@ int main2(int ac, char* av[]) {
   return 0;
 }
 
-int main(int ac, char* av[]) {
+int main2(int ac, char* av[]) {
   ebsc_test();
   return 0;
 }

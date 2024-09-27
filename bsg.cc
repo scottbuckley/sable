@@ -12,9 +12,10 @@
 
 #define ASSERT_NOT_FALSE
 
+#define KEEP_DISJ_STRICTLY_DISJOINT 1
+
 #define dout if constexpr (debug) cout
 #define ddout if (debug) cout
-
 
 #ifdef ASSERT_NOT_FALSE
   #define CANT_BE_FALSE(bsc) assert(!bsc.is_false())
@@ -78,6 +79,9 @@ public:
       } 
     }
   }
+
+  inline unsigned get_pathy() const { return pathy; }
+  inline unsigned get_truth() const { return truth; }
 
   static std::vector<BSC> from_any_bdd(const bdd & bdd_cond, const ap_info & apinfo, BSC bsc = BSC()) {
     constexpr bool debug = false;
@@ -156,6 +160,15 @@ public:
     return ((letter & pathy) == truth);
   }
 
+  unsigned example_accepting_letter() const {
+    assert (not_false());
+    return truth;
+  }
+
+  void lock_values_within_mask(const unsigned & mask) {
+    pathy |= mask;
+  }
+
   void check_validity() const {
     if (pathy == 0) {
       if (truth == 0) return;
@@ -183,6 +196,12 @@ public:
     return ((truth & common_pathy) == (other.truth & common_pathy));
   }
 
+  bool intersects_masked(const BSC & other, const unsigned & mask) const {
+    const unsigned masked_common_pathy = pathy & other.pathy & mask;
+    if (masked_common_pathy == 0) return true;
+    return ((truth & masked_common_pathy) == (other.truth & masked_common_pathy));
+  }
+
   static BSC intersection(const BSC & bsc, const BSC & other) {
     CANT_BE_FALSE(bsc); CANT_BE_FALSE(other);
     const unsigned common_pathy = bsc.pathy & other.pathy;
@@ -194,6 +213,7 @@ public:
       return BSC(bsc.truth | other.truth, bsc.pathy | other.pathy);
     }
   }
+  
 
   static BSC masked_intersection(const BSC & bsc, const BSC & other, const unsigned & mask) {
     CANT_BE_FALSE(bsc); CANT_BE_FALSE(other);
@@ -384,6 +404,12 @@ public:
     }
   }
 
+  std::tuple<BSC, BSC> split_at_first_var() const {
+    assert(pathy != 0);
+    const unsigned np_bit = pathy & -pathy;
+    return make_tuple(BSC(truth & np_bit, np_bit), BSC(truth & ~np_bit, pathy ^ np_bit));
+  }
+
 };
 
 struct BSG_Edge {
@@ -437,6 +463,14 @@ public:
     return span_iter<BSG_Edge>(&edges, states[s].first_edge_idx, states[s].num_edges);
   }
 
+  std::vector<BSG_Edge> & out_matching(const unsigned & s, const unsigned & letter) const {
+    std::vector<BSG_Edge> out;
+    for (const auto & e : this->out(s))
+      if (e.cond.accepts_letter(letter))
+        out.emplace_back(e);
+    return out;
+  }
+
   const unsigned num_states() const {
     return states.size();
   }
@@ -467,7 +501,13 @@ public:
 
   unsigned add_state() {
     edges.emplace_back();
-    return state_count++;
+    return ++state_count;
+  }
+
+  void add_states(const unsigned & new_state_count) {
+    for (unsigned i=0; i<new_state_count; ++i)
+      edges.emplace_back();
+    state_count += new_state_count;
   }
   
   void add_edge(unsigned src, unsigned dest, const BSC & cond) {
@@ -975,13 +1015,13 @@ private:
 
 public:
 
-  bool check_taut(bool debug = false) {
+  bool check_taut() {
     if (is_simple_true()) {
       growth_since_taut_check = false;
       return true;
     }
     if (growth_since_taut_check) {
-      if (full_check_tautology(debug)) {
+      if (full_check_tautology()) {
         return true;
       } else {
         // minimise();
@@ -1034,13 +1074,13 @@ public:
     }
   }
 
-  bool full_check_tautology(bool debug2 = false) {
+  bool full_check_tautology() {
     growth_since_taut_check = false;
     constexpr const bool debug = false;
 
     assert(!is_simple_true());
 
-    if (debug) {
+    if constexpr (debug) {
       dout << "checking taut on " << s() << endl;
       dout << "inv:" << endl;
       for (const auto & inv : inverse) {
@@ -1059,7 +1099,6 @@ public:
     while (!check_stack.empty()) {
       auto [inv_it, opt_it] = check_stack.top();
       check_stack.pop();
-      bool deleted = false;
       for (; opt_it != opt_end; ++opt_it) {
         const unsigned common_pathy = opt_it->pathy & inv_it->pathy;
 
@@ -1133,8 +1172,10 @@ public:
         // this is not a tautology.
         dout << "taut = false" << endl;
         dout << "inv:" << endl;
-        for (const auto & inv : inverse) {
-          dout << " - " << inv.s() << endl;
+        if constexpr (debug) {
+          for (const auto & inv : inverse) {
+            dout << " - " << inv.s() << endl;
+          }
         }
         return false;
       }
@@ -1211,260 +1252,4 @@ eBSC vrandom_eBSC(const unsigned & max_depth = 4, const unsigned & num_bits = 4,
     dout << "    is now: " << out.s() << endl;
   }
   return out;
-}
-
-void ebsc_test() {
-  const ap_info apinfo = make_fake_apinfo();
-  // std::srand(std::time(nullptr));
-
-
-  auto eBSC_eq_BDD = [&](eBSC ebsc, const bdd & b) {
-    if (b == bdd_true())  return ebsc.check_taut();
-    if (b == bdd_false()) return ebsc.is_false();
-    return !!(ebsc.to_bdd(apinfo) == b);
-  };
-
-  auto BSC_eq_BDD = [&](const BSC & bsc, const bdd & b) {
-    if (b == bdd_true())  return bsc.is_true();
-    if (b == bdd_false()) return bsc.is_false();
-    return !!(bsc.to_bdd(apinfo) == b);
-  };
-
-  auto assert_disj_same = [&](const eBSC & a, const eBSC & b){
-    bdd a_ = a.to_bdd(apinfo);
-    bdd b_ = b.to_bdd(apinfo);
-    eBSC aorb = a | b;
-    bdd a_orb_ = a_ | b_;
-
-    if (!eBSC_eq_BDD(aorb, a_orb_)) {
-      cout << "a: " << a.s(apinfo) << endl;
-      cout << "b: " << b.s(apinfo) << endl;
-      cout << "a_: " << apinfo.bdd_to_string(a_) << endl;
-      cout << "b_: " << apinfo.bdd_to_string(b_) << endl;
-      cout << "a | b: " << (a | b).s(apinfo) << endl;
-      // cout << "a | b (as bdd): " << apinfo.bdd_to_string((a | b).to_bdd(apinfo)) << endl;
-      cout << "a_ | b_: " << apinfo.bdd_to_string(a_ | b_) << endl;
-
-      cout << " *** FAILED *** " << endl;
-      exit(1);
-    } else {
-      // cout << "test passed" << endl;
-    }
-  };
-
-  auto conj_timers = StopwatchSet();
-  auto conj_total = conj_timers.make_timer("Cumul BSC/BDD Total");
-  conj_total->flag_total();
-  auto conj_bdd_timer = conj_timers.make_timer("BDD Operations");
-  auto conj_bsc_timer = conj_timers.make_timer("BSC Operations");
-
-  auto assert_conj_same = [&](const eBSC & a, const eBSC & b){
-    bdd a_ = a.to_bdd(apinfo);
-    bdd b_ = b.to_bdd(apinfo);
-
-    conj_bsc_timer->start();
-      eBSC aorb = a & b;
-    conj_bsc_timer->stop();
-
-
-    conj_bdd_timer->start();
-      bdd a_orb_ = a_ & b_;
-    conj_bdd_timer->stop();
-
-    if (!eBSC_eq_BDD(aorb, a_orb_)) {
-      cout << "a: " << a.s(apinfo) << endl;
-      cout << "b: " << b.s(apinfo) << endl;
-      cout << "a_: " << apinfo.bdd_to_string(a_) << endl;
-      cout << "b_: " << apinfo.bdd_to_string(b_) << endl;
-      cout << "a & b: " << (a & b).s(apinfo) << endl;
-      // cout << "a & b (as bdd): " << apinfo.bdd_to_string((a & b).to_bdd(apinfo)) << endl;
-      cout << "a_ & b_: " << apinfo.bdd_to_string(a_ & b_) << endl;
-
-      cout << " *** FAILED *** " << endl;
-      // exit(1);
-      throw std::runtime_error("failed");
-    } else {
-      // cout << "test passed" << endl;
-    }
-  };
-
-  auto simple_conj_timers = StopwatchSet();
-  auto simple_conj_total = simple_conj_timers.make_timer("Cumul BSC/BDD Total");
-  simple_conj_total->flag_total();
-  auto conj_simple_bdd_timer = simple_conj_timers.make_timer("Simple BDD Operations");
-  auto conj_simple_bsc_timer = simple_conj_timers.make_timer("Simple BSC Operations");
-
-  auto assert_single_conj_same = [&](const BSC & a, const BSC & b){
-    a.check_validity();
-    b.check_validity();
-    bdd a_ = a.to_bdd(apinfo);
-    bdd b_ = b.to_bdd(apinfo);
-    conj_simple_bsc_timer->start();
-      BSC aandb = a & b;
-    conj_simple_bsc_timer->stop();
-
-    conj_simple_bdd_timer->start();
-      bdd a_andb_ = a_ & b_;
-    conj_simple_bdd_timer->stop();
-
-    if (!BSC_eq_BDD(aandb, a_andb_)) {
-      cout << "a: " << a.s(apinfo) << endl;
-      cout << "a.is_false(): " << a.is_false() << endl;
-      cout << "b: " << b.s(apinfo) << endl;
-      cout << "a_: " << apinfo.bdd_to_string(a_) << endl;
-      cout << "b_: " << apinfo.bdd_to_string(b_) << endl;
-      cout << "a & b: " << (a & b).s(apinfo) << endl;
-      cout << "(a & b).is_false(): " << (a & b).is_false() << endl;
-      // cout << "a & b (as bdd): " << apinfo.bdd_to_string((a & b).to_bdd(apinfo)) << endl;
-      cout << "a_ & b_: " << apinfo.bdd_to_string(a_ & b_) << endl;
-
-      cout << " *** FAILED *** " << endl;
-      exit(1);
-    } else {
-      // cout << "test passed" << endl;
-    }
-  };
-
-  auto assert_single_disj_same = [&](const BSC & a, const BSC & b){
-    bdd a_ = a.to_bdd(apinfo);
-    bdd b_ = b.to_bdd(apinfo);
-    eBSC aandb = a | b;
-    bdd a_andb_ = a_ | b_;
-
-    bdd aandb_bdd = aandb.to_bdd(apinfo);
-    if (!eBSC_eq_BDD(aandb, a_andb_)) {
-      cout << "a: " << a.s(apinfo) << endl;
-      cout << "b: " << b.s(apinfo) << endl;
-      cout << "a_: " << apinfo.bdd_to_string(a_) << endl;
-      cout << "b_: " << apinfo.bdd_to_string(b_) << endl;
-      cout << "a | b: " << (aandb).s(apinfo) << endl;
-      cout << "a | b (as bdd): " << apinfo.bdd_to_string(aandb_bdd) << endl;
-      cout << "a_ | b_: " << apinfo.bdd_to_string(a_andb_) << endl;
-      // cout << "a_ zzz b_: " << apinfo.bdd_to_string(bdd_xor(a_, b_)) << endl;
-
-      cout << " *** FAILED *** " << endl;
-      exit(1);
-    } else {
-      // cout << "test passed" << endl;
-    }
-  };
-
-  auto timers = StopwatchSet();
-  auto cumul_total = timers.make_timer("Cumul BSC/BDD Total");
-  cumul_total->flag_total();
-  // auto convert_timer = timers.make_timer("BSC/BDD Conversion");
-  auto bdd_timer = timers.make_timer("BDD Operations");
-  auto bsc_timer = timers.make_timer("BSC Operations");
-  auto bsc_taut_timer = timers.make_timer("BSC Truth Checks");
-  page_start ("eBSC Tests Debug");
-
-  auto cumulative_disj_test = [&](){
-    // cout << " --- cumul --- " << endl;
-
-    eBSC cumul  = eBSC::False();
-    // convert_timer->start();
-      auto cumul_ = cumul.to_bdd(apinfo);
-    // convert_timer->stop();
-
-    unsigned index = 0;
-    while(true) {
-      index++;
-
-      BSC bsc = random_BSC();
-
-      // convert_timer->start();
-        
-      // convert_timer->stop();
-
-      auto prev_cumul = cumul;
-      auto prev_cumul_ = cumul_;
-
-      // cout << cumul.s() << " | " << bsc.s() << " = ..." << endl;
-      // cout << "                  in bdd = " << apinfo.bdd_to_string(cumul_) << endl;
-
-      bsc_timer->start();
-        cumul  |= bsc;
-      bsc_timer->stop();
-      bsc_taut_timer->start();
-        cumul.check_taut();
-      bsc_taut_timer->stop();
-
-      bdd_timer->start();
-        auto bsc_ = bsc.to_bdd(apinfo);
-        cumul_ |= bsc_;
-        if (cumul_ == bdd_true()) {}
-      bdd_timer->stop();
-
-      if (!eBSC_eq_BDD(cumul, cumul_)) {
-        cout << "prev cumul: " << prev_cumul.s() << endl;
-        cout << "new cond:   " << bsc.s() << endl;
-        cout << "new cumul:  " << cumul.s() << endl;
-        cout << "prev cumul bdd: " << apinfo.bdd_to_string(prev_cumul_) << endl;
-        cout << "new cumul bdd:  " << apinfo.bdd_to_string(cumul_) << endl;
-        cout << "check_taut: " << cumul.check_taut() << endl;
-        throw std::runtime_error("we failed :(");
-      }
-
-      if (cumul_ == bdd_true()) break;
-
-    }
-    
-  };
-
-  // std::srand(std::time(nullptr));
-  // print_vector(apinfo.dict->var_map);
-
-  std::srand(123);
-  constexpr const unsigned num_tests = 50000;
-  const unsigned progress_interval = 10000000;
-
-  cout << "cumulative disj tests ..." << endl;
-  cumul_total->start();
-  for (unsigned i=1; i<=num_tests; ++i) {
-    cumulative_disj_test();
-    if (i % progress_interval == 0) cout << i << endl;
-  }
-  cumul_total->stop();
-  timers.draw_page_donut("cumul");
-  cout << "cumulative disj tests passed." << endl << endl;
-  
-  cout << "single conj tests ..." << endl;
-  simple_conj_total->start();
-  for (unsigned i=1; i<=num_tests; ++i) {
-    assert_single_conj_same(random_BSC(), random_BSC());
-    if (i % progress_interval == 0) cout << i << endl;
-  }
-  simple_conj_total->stop();
-  simple_conj_timers.draw_page_donut("single conj");
-  cout << "single conj tests passed." << endl << endl;
-
-  cout << "single disj tests ..." << endl;
-  for (unsigned i=1; i<=num_tests; ++i) {
-    assert_single_disj_same(random_BSC(), random_BSC());
-    if (i % progress_interval == 0) cout << i << endl;
-  }
-  cout << "single disj tests passed." << endl << endl;
-
-  cout << "complex conj tests ..." << endl;
-  conj_total->start();
-  for (unsigned i=1; i<=num_tests; ++i) {
-    assert_conj_same(random_eBSC(), vrandom_eBSC());
-    if (i % progress_interval == 0) cout << i << endl;
-  }
-  conj_total->stop();
-  conj_timers.draw_page_donut("compound conj");
-  cout << "complex conj tests passed." << endl << endl;
-
-
-  cout << "complex disj tests ..." << endl;
-  for (unsigned i=1; i<=num_tests; ++i) {
-    assert_disj_same(random_eBSC(), random_eBSC());
-    if (i % progress_interval == 0) cout << i << endl;
-  }
-  cout << "complex disj tests passed." << endl << endl;
-  
-  cout << "passed " << num_tests << " tests." << endl;
-
-  page_finish();
-  
 }
