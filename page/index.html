@@ -290,7 +290,7 @@ maybe_render_graph('graph_6', `digraph "" {
 <p>No counterexample found. For this K, the formula is not realisable.</p>
 <div><p><b>Timers for K = 0:</b><br><span class="donut-thing" id="donut_7"></span>
 <script>
-let values_7 = [["Table Closing Instance",11208,"11 us"],["Walking Instance",8001,"8 us"],["Building Walker",35625,"35 us"],["Safety Game Solving Instance",133667,"133 us"],["Inclusion Check Instance (Moore intersects kUCB)",195125,"195 us"],["Inclusion Check Instance (Sanity check)",0,"0 ns"],["Inclusion Check Instance (Moore intersects kUCB complement)",0,"0 ns"],["[unmeasured]",282541,"282 us"]];
+let values_7 = [["Table Closing Instance",10793,"10 us"],["Walking Instance",7710,"7 us"],["Building Walker",37417,"37 us"],["Safety Game Solving Instance",108625,"108 us"],["Inclusion Check Instance (Moore intersects kUCB)",159250,"159 us"],["Inclusion Check Instance (Sanity check)",0,"0 ns"],["Inclusion Check Instance (Moore intersects kUCB complement)",0,"0 ns"],["[unmeasured]",284372,"284 us"]];
 render_donut('donut_7', values_7);
 </script></p></div>
 <p>We have a proof of unrealisability for K = 0</p>
@@ -1210,7 +1210,7 @@ maybe_render_graph('graph_19', `digraph "" {
 <p>No counterexample found. For this K, the formula is not realisable.</p>
 <div><p><b>Timers for K = 1:</b><br><span class="donut-thing" id="donut_20"></span>
 <script>
-let values_20 = [["Table Closing Instance",183784,"183 us"],["Walking Instance",931342,"931 us"],["Building Walker",104792,"104 us"],["Safety Game Solving Instance",359250,"359 us"],["Inclusion Check Instance (Moore intersects kUCB)",508834,"508 us"],["Inclusion Check Instance (Sanity check)",0,"0 ns"],["Inclusion Check Instance (Moore intersects kUCB complement)",287500,"287 us"],["[unmeasured]",2315789,"2 ms"]];
+let values_20 = [["Table Closing Instance",175624,"175 us"],["Walking Instance",919920,"919 us"],["Building Walker",101958,"101 us"],["Safety Game Solving Instance",325207,"325 us"],["Inclusion Check Instance (Moore intersects kUCB)",430041,"430 us"],["Inclusion Check Instance (Sanity check)",0,"0 ns"],["Inclusion Check Instance (Moore intersects kUCB complement)",263333,"263 us"],["[unmeasured]",2066417,"2 ms"]];
 render_donut('donut_20', values_20);
 </script></p></div>
 <p>We have a proof of unrealisability for K = 1</p>
@@ -1734,82 +1734,9 @@ maybe_render_graph('graph_27', `digraph "" {
 `, 10, 82);
 </script>
 </p></div>
-<p>trying to find a smaller substrategy from the final solved hypothesis ...</p>
-<div><p><b>most permissive strat:</b><br><span class="graphviz-graph" id="graph_28"></span>
+<div><p><b>Mealy machine (9 states):</b><br><span class="graphviz-graph" id="graph_28"></span>
 <script>
 maybe_render_graph('graph_28', `digraph "" {
-  rankdir=LR
-  label=<t<br/>[all]>
-  labelloc="t"
-  node [shape="circle"]
-  node [style="filled", fillcolor="#ffffaa"]
-  fontname="Lato"
-  node [fontname="Lato"]
-  edge [fontname="Lato"]
-  I [label="", style=invis, width=0]
-  I -> 0
-  0 [label=<0>]
-  0 -> 0 [label=<r0 &amp; r1>]
-  0 -> 1 [label=<!r0 &amp; r1>]
-  0 -> 3 [label=<r0 &amp; !r1>]
-  0 -> 8 [label=<!r0 &amp; !r1>]
-  1 [label=<1>]
-  1 -> 0 [label=<r0 &amp; r1>]
-  1 -> 1 [label=<!g &amp; !r0 &amp; r1>]
-  1 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  1 -> 3 [label=<r0 &amp; !r1>]
-  1 -> 6 [label=<!g &amp; !r0 &amp; !r1>]
-  1 -> 7 [label=<g &amp; !r0 &amp; !r1>]
-  2 [label=<2>]
-  2 -> 0 [label=<r0 &amp; r1>]
-  2 -> 2 [label=<!g &amp; !r0 &amp; r1>]
-  2 -> 3 [label=<r0 &amp; !r1>]
-  2 -> 6 [label=<!g &amp; !r0 &amp; !r1>]
-  3 [label=<3>]
-  3 -> 0 [label=<r0 &amp; r1>]
-  3 -> 1 [label=<!r0 &amp; r1>]
-  3 -> 3 [label=<!g &amp; r0 &amp; !r1>]
-  3 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  3 -> 5 [label=<!r0 &amp; !r1>]
-  4 [label=<4>]
-  4 -> 0 [label=<r0 &amp; r1>]
-  4 -> 1 [label=<!r0 &amp; r1>]
-  4 -> 4 [label=<!g &amp; r0 &amp; !r1>]
-  4 -> 5 [label=<!g &amp; !r0 &amp; !r1>]
-  5 [label=<5>]
-  5 -> 0 [label=<r0 &amp; r1>]
-  5 -> 1 [label=<!g &amp; !r0 &amp; r1>]
-  5 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  5 -> 3 [label=<!g &amp; r0 &amp; !r1>]
-  5 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  5 -> 6 [label=<!r0 &amp; !r1>]
-  6 [label=<6>]
-  6 -> 0 [label=<r0 &amp; r1>]
-  6 -> 1 [label=<!g &amp; !r0 &amp; r1>]
-  6 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  6 -> 3 [label=<!g &amp; r0 &amp; !r1>]
-  6 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  6 -> 6 [label=<!r0 &amp; !r1>]
-  7 [label=<7>]
-  7 -> 0 [label=<r0 &amp; r1>]
-  7 -> 2 [label=<!g &amp; !r0 &amp; r1>]
-  7 -> 3 [label=<!g &amp; r0 &amp; !r1>]
-  7 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  7 -> 6 [label=<!g &amp; !r0 &amp; !r1>]
-  8 [label=<8>]
-  8 -> 0 [label=<r0 &amp; r1>]
-  8 -> 1 [label=<!g &amp; !r0 &amp; r1>]
-  8 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  8 -> 3 [label=<!g &amp; r0 &amp; !r1>]
-  8 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  8 -> 6 [label=<!r0 &amp; !r1>]
-}
-`, 9, 46);
-</script>
-</p></div>
-<div><p><b>Mealy machine (9 states):</b><br><span class="graphviz-graph" id="graph_29"></span>
-<script>
-maybe_render_graph('graph_29', `digraph "" {
   rankdir=LR
   label=<t<br/>[all]>
   labelloc="t"
@@ -1944,9 +1871,9 @@ Suffixes:
   6: [g & r0 & !r1]
 </code></pre></div><p><b>Number of states: </b>12</p>
 <p>Hypothesis is realisable.</p>
-<div><p><b>Strategy:</b><br><span class="graphviz-graph" id="graph_30"></span>
+<div><p><b>Strategy:</b><br><span class="graphviz-graph" id="graph_29"></span>
 <script>
-maybe_render_graph('graph_30', `digraph "" {
+maybe_render_graph('graph_29', `digraph "" {
   rankdir=LR
   label=<Fin(<font color="#1F78B4">⓿</font>)<br/>[co-Büchi]>
   labelloc="t"
@@ -2073,9 +2000,9 @@ maybe_render_graph('graph_30', `digraph "" {
 `, 12, 100);
 </script>
 </p></div>
-<div><p><b>Mealy machine (10 states):</b><br><span class="graphviz-graph" id="graph_31"></span>
+<div><p><b>Mealy machine (10 states):</b><br><span class="graphviz-graph" id="graph_30"></span>
 <script>
-maybe_render_graph('graph_31', `digraph "" {
+maybe_render_graph('graph_30', `digraph "" {
   rankdir=LR
   label=<t<br/>[all]>
   labelloc="t"
@@ -2229,9 +2156,9 @@ Suffixes:
   9: [g & !r0 & r1]
 </code></pre></div><p><b>Number of states: </b>14</p>
 <p>Hypothesis is realisable.</p>
-<div><p><b>Strategy:</b><br><span class="graphviz-graph" id="graph_32"></span>
+<div><p><b>Strategy:</b><br><span class="graphviz-graph" id="graph_31"></span>
 <script>
-maybe_render_graph('graph_32', `digraph "" {
+maybe_render_graph('graph_31', `digraph "" {
   rankdir=LR
   label=<Fin(<font color="#1F78B4">⓿</font>)<br/>[co-Büchi]>
   labelloc="t"
@@ -2378,9 +2305,9 @@ maybe_render_graph('graph_32', `digraph "" {
 `, 14, 118);
 </script>
 </p></div>
-<div><p><b>Mealy machine (11 states):</b><br><span class="graphviz-graph" id="graph_33"></span>
+<div><p><b>Mealy machine (11 states):</b><br><span class="graphviz-graph" id="graph_32"></span>
 <script>
-maybe_render_graph('graph_33', `digraph "" {
+maybe_render_graph('graph_32', `digraph "" {
   rankdir=LR
   label=<t<br/>[all]>
   labelloc="t"
@@ -2591,9 +2518,9 @@ Suffixes:
  19: [!g & r0 & r1]
 </code></pre></div><p><b>Number of states: </b>28</p>
 <p>Hypothesis is realisable.</p>
-<div><p><b>Strategy:</b><br><span class="graphviz-graph" id="graph_34"></span>
+<div><p><b>Strategy:</b><br><span class="graphviz-graph" id="graph_33"></span>
 <script>
-maybe_render_graph('graph_34', `digraph "" {
+maybe_render_graph('graph_33', `digraph "" {
   rankdir=LR
   label=<Fin(<font color="#1F78B4">⓿</font>)<br/>[co-Büchi]>
   labelloc="t"
@@ -2880,9 +2807,9 @@ maybe_render_graph('graph_34', `digraph "" {
 `, 28, 244);
 </script>
 </p></div>
-<div><p><b>Mealy machine (21 states):</b><br><span class="graphviz-graph" id="graph_35"></span>
+<div><p><b>Mealy machine (21 states):</b><br><span class="graphviz-graph" id="graph_34"></span>
 <script>
-maybe_render_graph('graph_35', `digraph "" {
+maybe_render_graph('graph_34', `digraph "" {
   rankdir=LR
   label=<t<br/>[all]>
   labelloc="t"
@@ -3185,9 +3112,9 @@ Suffixes:
  23: [g & r0 & !r1]
 </code></pre></div><p><b>Number of states: </b>31</p>
 <p>Hypothesis is realisable.</p>
-<div><p><b>Strategy:</b><br><span class="graphviz-graph" id="graph_36"></span>
+<div><p><b>Strategy:</b><br><span class="graphviz-graph" id="graph_35"></span>
 <script>
-maybe_render_graph('graph_36', `digraph "" {
+maybe_render_graph('graph_35', `digraph "" {
   rankdir=LR
   label=<Fin(<font color="#1F78B4">⓿</font>)<br/>[co-Büchi]>
   labelloc="t"
@@ -3504,9 +3431,9 @@ maybe_render_graph('graph_36', `digraph "" {
 `, 31, 271);
 </script>
 </p></div>
-<div><p><b>Mealy machine (23 states):</b><br><span class="graphviz-graph" id="graph_37"></span>
+<div><p><b>Mealy machine (23 states):</b><br><span class="graphviz-graph" id="graph_36"></span>
 <script>
-maybe_render_graph('graph_37', `digraph "" {
+maybe_render_graph('graph_36', `digraph "" {
   rankdir=LR
   label=<t<br/>[all]>
   labelloc="t"
@@ -3839,9 +3766,9 @@ Suffixes:
  27: [g & !r0 & r1]
 </code></pre></div><p><b>Number of states: </b>34</p>
 <p>Hypothesis is realisable.</p>
-<div><p><b>Strategy:</b><br><span class="graphviz-graph" id="graph_38"></span>
+<div><p><b>Strategy:</b><br><span class="graphviz-graph" id="graph_37"></span>
 <script>
-maybe_render_graph('graph_38', `digraph "" {
+maybe_render_graph('graph_37', `digraph "" {
   rankdir=LR
   label=<Fin(<font color="#1F78B4">⓿</font>)<br/>[co-Büchi]>
   labelloc="t"
@@ -4188,9 +4115,9 @@ maybe_render_graph('graph_38', `digraph "" {
 `, 34, 298);
 </script>
 </p></div>
-<div><p><b>Mealy machine (26 states):</b><br><span class="graphviz-graph" id="graph_39"></span>
+<div><p><b>Mealy machine (26 states):</b><br><span class="graphviz-graph" id="graph_38"></span>
 <script>
-maybe_render_graph('graph_39', `digraph "" {
+maybe_render_graph('graph_38', `digraph "" {
   rankdir=LR
   label=<t<br/>[all]>
   labelloc="t"
@@ -4338,287 +4265,15 @@ maybe_render_graph('graph_39', `digraph "" {
 <p>No counterexample found. The mealy machine above satisfies the kUCB.</p>
 <p>Also checking against the UCB</p>
 <p>Also passed the Buchi test.</p>
-<p>trying to find a smaller substrategy from the final solved hypothesis ...</p>
-<div><p><b>most permissive strat:</b><br><span class="graphviz-graph" id="graph_40"></span>
+<div><p><b>Timers for K = 2:</b><br><span class="donut-thing" id="donut_39"></span>
 <script>
-maybe_render_graph('graph_40', `digraph "" {
-  rankdir=LR
-  label=<t<br/>[all]>
-  labelloc="t"
-  node [shape="ellipse",width="0.5",height="0.5"]
-  node [style="filled", fillcolor="#ffffaa"]
-  fontname="Lato"
-  node [fontname="Lato"]
-  edge [fontname="Lato"]
-  I [label="", style=invis, width=0]
-  I -> 0
-  0 [label=<0>]
-  0 -> 0 [label=<g &amp; r0 &amp; r1>]
-  0 -> 1 [label=<g &amp; !r0 &amp; r1>]
-  0 -> 3 [label=<!g &amp; r0 &amp; r1>]
-  0 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  0 -> 6 [label=<!g &amp; !r0 &amp; r1>]
-  0 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  0 -> 26 [label=<g &amp; !r0 &amp; !r1>]
-  0 -> 32 [label=<!g &amp; !r0 &amp; !r1>]
-  1 [label=<1>]
-  1 -> 0 [label=<g &amp; r0 &amp; r1>]
-  1 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  1 -> 3 [label=<!g &amp; r0 &amp; r1>]
-  1 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  1 -> 6 [label=<!g &amp; !r0 &amp; r1>]
-  1 -> 7 [label=<g &amp; !r0 &amp; !r1>]
-  1 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  1 -> 31 [label=<!g &amp; !r0 &amp; !r1>]
-  2 [label=<2>]
-  2 -> 0 [label=<g &amp; r0 &amp; r1>]
-  2 -> 3 [label=<!g &amp; r0 &amp; r1>]
-  2 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  2 -> 8 [label=<!g &amp; !r0 &amp; r1>]
-  2 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  2 -> 27 [label=<!g &amp; !r0 &amp; !r1>]
-  3 [label=<3>]
-  3 -> 0 [label=<g &amp; r0 &amp; r1>]
-  3 -> 1 [label=<g &amp; !r0 &amp; r1>]
-  3 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  3 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  3 -> 13 [label=<!g &amp; !r0 &amp; r1>]
-  3 -> 15 [label=<!g &amp; !r0 &amp; !r1>]
-  3 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  3 -> 26 [label=<g &amp; !r0 &amp; !r1>]
-  4 [label=<4>]
-  4 -> 0 [label=<g &amp; r0 &amp; r1>]
-  4 -> 1 [label=<g &amp; !r0 &amp; r1>]
-  4 -> 3 [label=<!g &amp; r0 &amp; r1>]
-  4 -> 5 [label=<g &amp; r0 &amp; !r1>]
-  4 -> 6 [label=<!g &amp; !r0 &amp; r1>]
-  4 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  4 -> 22 [label=<g &amp; !r0 &amp; !r1>]
-  4 -> 30 [label=<!g &amp; !r0 &amp; !r1>]
-  5 [label=<5>]
-  5 -> 0 [label=<g &amp; r0 &amp; r1>]
-  5 -> 1 [label=<g &amp; !r0 &amp; r1>]
-  5 -> 3 [label=<!g &amp; r0 &amp; r1>]
-  5 -> 6 [label=<!g &amp; !r0 &amp; r1>]
-  5 -> 17 [label=<!g &amp; r0 &amp; !r1>]
-  5 -> 29 [label=<!g &amp; !r0 &amp; !r1>]
-  6 [label=<6>]
-  6 -> 0 [label=<g &amp; r0 &amp; r1>]
-  6 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  6 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  6 -> 7 [label=<g &amp; !r0 &amp; !r1>]
-  6 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  6 -> 13 [label=<!g &amp; !r0 &amp; r1>]
-  6 -> 15 [label=<!g &amp; !r0 &amp; !r1>]
-  6 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  7 [label=<7>]
-  7 -> 0 [label=<g &amp; r0 &amp; r1>]
-  7 -> 3 [label=<!g &amp; r0 &amp; r1>]
-  7 -> 5 [label=<g &amp; r0 &amp; !r1>]
-  7 -> 8 [label=<!g &amp; !r0 &amp; r1>]
-  7 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  7 -> 27 [label=<!g &amp; !r0 &amp; !r1>]
-  8 [label=<8>]
-  8 -> 0 [label=<g &amp; r0 &amp; r1>]
-  8 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  8 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  8 -> 19 [label=<!g &amp; !r0 &amp; r1>]
-  8 -> 20 [label=<!g &amp; !r0 &amp; !r1>]
-  8 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  9 [label=<9>]
-  9 -> 0 [label=<g &amp; r0 &amp; r1>]
-  9 -> 1 [label=<g &amp; !r0 &amp; r1>]
-  9 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  9 -> 10 [label=<!g &amp; !r0 &amp; r1>]
-  9 -> 14 [label=<!g &amp; r0 &amp; !r1>]
-  9 -> 15 [label=<!g &amp; !r0 &amp; !r1>]
-  9 -> 26 [label=<g &amp; !r0 &amp; !r1>]
-  10 [label=<10>]
-  10 -> 0 [label=<g &amp; r0 &amp; r1>]
-  10 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  10 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  10 -> 7 [label=<g &amp; !r0 &amp; !r1>]
-  10 -> 10 [label=<!g &amp; !r0 &amp; r1>]
-  10 -> 11 [label=<!g &amp; !r0 &amp; !r1>]
-  11 [label=<11>]
-  11 -> 0 [label=<g &amp; r0 &amp; r1>]
-  11 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  11 -> 5 [label=<g &amp; r0 &amp; !r1>]
-  11 -> 10 [label=<!g &amp; !r0 &amp; r1>]
-  11 -> 12 [label=<!g &amp; !r0 &amp; !r1>]
-  11 -> 16 [label=<g &amp; !r0 &amp; !r1>]
-  12 [label=<12>]
-  12 -> 0 [label=<g &amp; r0 &amp; r1>]
-  12 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  12 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  12 -> 12 [label=<!g &amp; !r0 &amp; !r1>]
-  12 -> 13 [label=<!g &amp; !r0 &amp; r1>]
-  12 -> 17 [label=<!g &amp; r0 &amp; !r1>]
-  13 [label=<13>]
-  13 -> 0 [label=<g &amp; r0 &amp; r1>]
-  13 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  13 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  13 -> 7 [label=<g &amp; !r0 &amp; !r1>]
-  13 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  13 -> 13 [label=<!g &amp; !r0 &amp; r1>]
-  13 -> 14 [label=<!g &amp; r0 &amp; !r1>]
-  13 -> 15 [label=<!g &amp; !r0 &amp; !r1>]
-  14 [label=<14>]
-  14 -> 0 [label=<g &amp; r0 &amp; r1>]
-  14 -> 1 [label=<g &amp; !r0 &amp; r1>]
-  14 -> 5 [label=<g &amp; r0 &amp; !r1>]
-  14 -> 10 [label=<!g &amp; !r0 &amp; r1>]
-  14 -> 14 [label=<!g &amp; r0 &amp; !r1>]
-  14 -> 15 [label=<!g &amp; !r0 &amp; !r1>]
-  14 -> 22 [label=<g &amp; !r0 &amp; !r1>]
-  15 [label=<15>]
-  15 -> 0 [label=<g &amp; r0 &amp; r1>]
-  15 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  15 -> 5 [label=<g &amp; r0 &amp; !r1>]
-  15 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  15 -> 13 [label=<!g &amp; !r0 &amp; r1>]
-  15 -> 15 [label=<!g &amp; !r0 &amp; !r1>]
-  15 -> 16 [label=<g &amp; !r0 &amp; !r1>]
-  15 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  16 [label=<16>]
-  16 -> 0 [label=<g &amp; r0 &amp; r1>]
-  16 -> 3 [label=<!g &amp; r0 &amp; r1>]
-  16 -> 8 [label=<!g &amp; !r0 &amp; r1>]
-  16 -> 17 [label=<!g &amp; r0 &amp; !r1>]
-  16 -> 18 [label=<!g &amp; !r0 &amp; !r1>]
-  17 [label=<17>]
-  17 -> 0 [label=<g &amp; r0 &amp; r1>]
-  17 -> 1 [label=<g &amp; !r0 &amp; r1>]
-  17 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  17 -> 12 [label=<!g &amp; !r0 &amp; !r1>]
-  17 -> 13 [label=<!g &amp; !r0 &amp; r1>]
-  17 -> 17 [label=<!g &amp; r0 &amp; !r1>]
-  18 [label=<18>]
-  18 -> 0 [label=<g &amp; r0 &amp; r1>]
-  18 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  18 -> 17 [label=<!g &amp; r0 &amp; !r1>]
-  18 -> 19 [label=<!g &amp; !r0 &amp; r1>]
-  18 -> 25 [label=<!g &amp; !r0 &amp; !r1>]
-  19 [label=<19>]
-  19 -> 0 [label=<g &amp; r0 &amp; r1>]
-  19 -> 4 [label=<g &amp; r0 &amp; !r1>]
-  19 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  19 -> 14 [label=<!g &amp; r0 &amp; !r1>]
-  19 -> 19 [label=<!g &amp; !r0 &amp; r1>]
-  19 -> 20 [label=<!g &amp; !r0 &amp; !r1>]
-  20 [label=<20>]
-  20 -> 0 [label=<g &amp; r0 &amp; r1>]
-  20 -> 5 [label=<g &amp; r0 &amp; !r1>]
-  20 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  20 -> 19 [label=<!g &amp; !r0 &amp; r1>]
-  20 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  20 -> 25 [label=<!g &amp; !r0 &amp; !r1>]
-  21 [label=<21>]
-  21 -> 0 [label=<g &amp; r0 &amp; r1>]
-  21 -> 1 [label=<g &amp; !r0 &amp; r1>]
-  21 -> 5 [label=<g &amp; r0 &amp; !r1>]
-  21 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  21 -> 13 [label=<!g &amp; !r0 &amp; r1>]
-  21 -> 15 [label=<!g &amp; !r0 &amp; !r1>]
-  21 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  21 -> 22 [label=<g &amp; !r0 &amp; !r1>]
-  22 [label=<22>]
-  22 -> 0 [label=<g &amp; r0 &amp; r1>]
-  22 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  22 -> 3 [label=<!g &amp; r0 &amp; r1>]
-  22 -> 6 [label=<!g &amp; !r0 &amp; r1>]
-  22 -> 17 [label=<!g &amp; r0 &amp; !r1>]
-  22 -> 23 [label=<!g &amp; !r0 &amp; !r1>]
-  23 [label=<23>]
-  23 -> 0 [label=<g &amp; r0 &amp; r1>]
-  23 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  23 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  23 -> 13 [label=<!g &amp; !r0 &amp; r1>]
-  23 -> 17 [label=<!g &amp; r0 &amp; !r1>]
-  23 -> 24 [label=<!g &amp; !r0 &amp; !r1>]
-  24 [label=<24>]
-  24 -> 0 [label=<g &amp; r0 &amp; r1>]
-  24 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  24 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  24 -> 13 [label=<!g &amp; !r0 &amp; r1>]
-  24 -> 17 [label=<!g &amp; r0 &amp; !r1>]
-  24 -> 25 [label=<!g &amp; !r0 &amp; !r1>]
-  25 [label=<25>]
-  25 -> 0 [label=<g &amp; r0 &amp; r1>]
-  25 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  25 -> 17 [label=<!g &amp; r0 &amp; !r1>]
-  25 -> 19 [label=<!g &amp; !r0 &amp; r1>]
-  25 -> 25 [label=<!g &amp; !r0 &amp; !r1>]
-  26 [label=<26>]
-  26 -> 0 [label=<g &amp; r0 &amp; r1>]
-  26 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  26 -> 3 [label=<!g &amp; r0 &amp; r1>]
-  26 -> 5 [label=<g &amp; r0 &amp; !r1>]
-  26 -> 6 [label=<!g &amp; !r0 &amp; r1>]
-  26 -> 15 [label=<!g &amp; !r0 &amp; !r1>]
-  26 -> 16 [label=<g &amp; !r0 &amp; !r1>]
-  26 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  27 [label=<27>]
-  27 -> 0 [label=<g &amp; r0 &amp; r1>]
-  27 -> 5 [label=<g &amp; r0 &amp; !r1>]
-  27 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  27 -> 19 [label=<!g &amp; !r0 &amp; r1>]
-  27 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  27 -> 28 [label=<!g &amp; !r0 &amp; !r1>]
-  28 [label=<28>]
-  28 -> 0 [label=<g &amp; r0 &amp; r1>]
-  28 -> 5 [label=<g &amp; r0 &amp; !r1>]
-  28 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  28 -> 19 [label=<!g &amp; !r0 &amp; r1>]
-  28 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  28 -> 25 [label=<!g &amp; !r0 &amp; !r1>]
-  29 [label=<29>]
-  29 -> 0 [label=<g &amp; r0 &amp; r1>]
-  29 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  29 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  29 -> 12 [label=<!g &amp; !r0 &amp; !r1>]
-  29 -> 13 [label=<!g &amp; !r0 &amp; r1>]
-  29 -> 17 [label=<!g &amp; r0 &amp; !r1>]
-  30 [label=<30>]
-  30 -> 0 [label=<g &amp; r0 &amp; r1>]
-  30 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  30 -> 5 [label=<g &amp; r0 &amp; !r1>]
-  30 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  30 -> 13 [label=<!g &amp; !r0 &amp; r1>]
-  30 -> 16 [label=<g &amp; !r0 &amp; !r1>]
-  30 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  30 -> 31 [label=<!g &amp; !r0 &amp; !r1>]
-  31 [label=<31>]
-  31 -> 0 [label=<g &amp; r0 &amp; r1>]
-  31 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  31 -> 5 [label=<g &amp; r0 &amp; !r1>]
-  31 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  31 -> 13 [label=<!g &amp; !r0 &amp; r1>]
-  31 -> 16 [label=<g &amp; !r0 &amp; !r1>]
-  31 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  31 -> 31 [label=<!g &amp; !r0 &amp; !r1>]
-  32 [label=<32>]
-  32 -> 0 [label=<g &amp; r0 &amp; r1>]
-  32 -> 2 [label=<g &amp; !r0 &amp; r1>]
-  32 -> 5 [label=<g &amp; r0 &amp; !r1>]
-  32 -> 9 [label=<!g &amp; r0 &amp; r1>]
-  32 -> 13 [label=<!g &amp; !r0 &amp; r1>]
-  32 -> 16 [label=<g &amp; !r0 &amp; !r1>]
-  32 -> 21 [label=<!g &amp; r0 &amp; !r1>]
-  32 -> 31 [label=<!g &amp; !r0 &amp; !r1>]
-}
-`, 33, 221);
-</script>
-</p></div>
-<div><p><b>Timers for K = 2:</b><br><span class="donut-thing" id="donut_41"></span>
-<script>
-let values_41 = [["Table Closing Instance",995547,"995 us"],["Walking Instance",15465532,"15 ms"],["Building Walker",174583,"174 us"],["Safety Game Solving Instance",1385334,"1 ms"],["Inclusion Check Instance (Moore intersects kUCB)",0,"0 ns"],["Inclusion Check Instance (Sanity check)",205166,"205 us"],["Inclusion Check Instance (Moore intersects kUCB complement)",1438834,"1 ms"],["[unmeasured]",20232754,"20 ms"]];
-render_donut('donut_41', values_41);
+let values_39 = [["Table Closing Instance",1010765,"1 ms"],["Walking Instance",15713664,"15 ms"],["Building Walker",168042,"168 us"],["Safety Game Solving Instance",1332375,"1 ms"],["Inclusion Check Instance (Moore intersects kUCB)",0,"0 ns"],["Inclusion Check Instance (Sanity check)",177292,"177 us"],["Inclusion Check Instance (Moore intersects kUCB complement)",1447751,"1 ms"],["[unmeasured]",9676736,"9 ms"]];
+render_donut('donut_39', values_39);
 </script></p></div>
 <p>We have a solution for K = 2.</p>
-<div><p><b>Solution mealy  machine:</b><br><span class="graphviz-graph" id="graph_42"></span>
+<div><p><b>Solution mealy  machine:</b><br><span class="graphviz-graph" id="graph_40"></span>
 <script>
-maybe_render_graph('graph_42', `digraph "" {
+maybe_render_graph('graph_40', `digraph "" {
   rankdir=LR
   label=<t<br/>[all]>
   labelloc="t"
@@ -4763,9 +4418,9 @@ maybe_render_graph('graph_42', `digraph "" {
 `, 26, 104);
 </script>
 </p></div>
-<div><p><b>Timers for total execution:</b><br><span class="donut-thing" id="donut_43"></span>
+<div><p><b>Timers for total execution:</b><br><span class="donut-thing" id="donut_41"></span>
 <script>
-let values_43 = [["Building Walkers",315000,"315 us"],["Walking",16404875,"16 ms"],["Initialisation",9403208,"9 ms"],["Safety Game Solving",1878251,"1 ms"],["K Expansion",172625,"172 us"],["Inclusion Checks",2635459,"2 ms"],["Table closing",1190539,"1 ms"],["[unmeasured]",23940585,"23 ms"]];
-render_donut('donut_43', values_43);
+let values_41 = [["Building Walkers",307417,"307 us"],["Walking",16641294,"16 ms"],["Initialisation",9374625,"9 ms"],["Safety Game Solving",1766207,"1 ms"],["K Expansion",192667,"192 us"],["Inclusion Checks",2477667,"2 ms"],["Table closing",1197182,"1 ms"],["[unmeasured]",13082400,"13 ms"]];
+render_donut('donut_41', values_41);
 </script></p></div>
 </body></html>

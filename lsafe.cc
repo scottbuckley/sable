@@ -322,6 +322,9 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
       IF_K_TIMERS local_timers.draw_page_donut("Timers for K = " + to_string(k));
     });
 
+    // find state count for determinisation of UCB with bound K
+    
+
     // expand the UCB into a kUCB
     k_expansion_timer->start();
       twa_graph_ptr kucb = kcobuchi_expand(cobuchi, k);
@@ -625,7 +628,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
           page_graph(H, "Strategy");
           // debug
           if (i == 3 && k == 2) {
-            debug_find_smaller_substrategy(H, apinfo);
+            // debug_find_smaller_substrategy(H, apinfo);
           }
           page_graph(machine, "Mealy machine (" + to_string(machine->num_states()) + " states)");
         }
@@ -687,7 +690,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
             // debug_check_hardcoded_solution(H, apmap);
             // here is where we have a final (mealy) solution.
             // i will try to re-select a smaller mealy machine from the most-permissive strategy here.
-            debug_find_smaller_substrategy(H, apinfo);
+            // debug_find_smaller_substrategy(H, apinfo);
           }
           return make_tuple(true, machine);
         }

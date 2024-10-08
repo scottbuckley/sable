@@ -4,10 +4,8 @@
 #include "bsg.cc"
 #include "bdd.cc"
 
-
-
 std::vector<boost::dynamic_bitset<>> incompatible_state_pairs(const BSG & hyp, const ap_info & apinfo) {
-  constexpr bool debug = false;
+  bool debug = true;
 
   // make a vector of bitsets, all set to 0 for now, so we have a 2d array of bits defining
   // which pairs of states have been identified as incompatible.
@@ -32,14 +30,14 @@ std::vector<boost::dynamic_bitset<>> incompatible_state_pairs(const BSG & hyp, c
       cout << endl;
     }
 
-    bool break_for_this_pair = false;
-
     // look at all pairs of states.
     for (unsigned s1=0; s1<num_states; ++s1) {
       for (unsigned s2=s1+1; s2<num_states; ++s2) {
-        dout << "state " << s1 << " and state " << s2 << endl;
+        bool debug = (s1 == 2 && s2 == 9);
+        ddout << "state " << s1 << " and state " << s2 << endl;
         // we already know this pair is incompatible, we don't need to check it.
         if (incompat[s1][s2]) continue;
+
 
         // Reminder: I want to try to prove that these two states are NOT comptible.
         // This means I am kinda searching for combatibility (in the context of assumptions about
@@ -59,24 +57,24 @@ std::vector<boost::dynamic_bitset<>> incompatible_state_pairs(const BSG & hyp, c
             // do these two edges share some input?
             BSC edge_input_intersection = BSC::masked_intersection(e1.cond, e2.cond, apinfo.input_mask);
 
-            dout << "  edge " << e1.cond << " and edge " << e2.cond << " : " << edge_input_intersection << endl;
+            ddout << "  edge " << e1.cond << " and edge " << e2.cond << " : " << edge_input_intersection << endl;
 
             // if there's no shared input on these two edges, they won't contribute.
             if (edge_input_intersection.is_false()) continue;
 
-            dout << "    there is some input intersection" << endl;
+            ddout << "    there is some input intersection" << endl;
 
             // if there's also no shared output for the shared input, these edges won't contribute.
             if (!e1.cond.intersects(e2.cond)) continue;
 
-            dout << "    there is also output intersection" << endl;
+            ddout << "    there is also output intersection" << endl;
 
             // at this point, we know that the destinations are currently considered compatible,
             // and that the input and output APs intersect between the two edges.
             // we can record that the collision of the inputs are covered for this pair of states.
             cond_covered_by_connections |= edge_input_intersection;
-            dout << "    the next states are also (thus far) compatible" << endl;
-            dout << "    input covered: " << cond_covered_by_connections.to_string() << endl;
+            ddout << "    the next states are also (thus far) compatible" << endl;
+            ddout << "    input covered: " << cond_covered_by_connections.to_string() << endl;
 
             // if we have already covered all of the input language, we probably can stop looking
             // at edges.
@@ -104,6 +102,7 @@ std::vector<boost::dynamic_bitset<>> incompatible_state_pairs(const BSG & hyp, c
 
   cout << "final incompat table" << endl;
   for (unsigned s1=0; s1<num_states; ++s1) {
+    cout <<  s1 << ": ";
     for (unsigned s2=0; s2<num_states; ++s2) {
       cout << incompat[s1][s2] << " ";
     }
@@ -138,30 +137,27 @@ void get_compat_sets_including(const unsigned & s, const std::vector<boost::dyna
   auto next = grow_set(init_set);
 }
 
-auto get_greedy_compat_set(const unsigned & s, const std::vector<boost::dynamic_bitset<>> & incompat) {
+auto get_greedy_compat_set(const unsigned & starting_state, const std::vector<boost::dynamic_bitset<>> & incompat, boost::dynamic_bitset<> & states_in_sets) {
   // we are making a "maximal" compatible set, starting with `s`, greedily adding the first
   // compatible states we see, without any backtracking.
   const unsigned num_states = incompat.size();
-  // add another state to the current set if you can
-  auto grow_set = [&](std::vector<unsigned> & set) {
-    for (unsigned se=0; se<num_states; ++se) {
-      bool could_add_to_set = true;
-      for (const unsigned & si : set) {
-        if (se == si || incompat[se][si]) {
-          could_add_to_set = false;
-          break;
-        }
-      }
-      if (could_add_to_set) {
-        set.push_back(se);
-        return true;
-      }
-    }
-    return false;
-  };
 
-  std::vector<unsigned> state_set = {s};
-  while (grow_set(state_set));
+  std::vector<unsigned> state_set = {starting_state};
+
+  for (unsigned i=0; i<num_states; ++i) {
+    if (states_in_sets[i]) continue;
+    bool could_add = true;
+    for (const auto & s : state_set) {
+      if (s == i || incompat[s][i])
+        could_add = false;
+    }
+    if (could_add) {
+      state_set.push_back(i);
+      states_in_sets.set(i);
+    }
+  }
+
+  // while (grow_set(state_set));
   return state_set;
 }
 
@@ -180,21 +176,26 @@ void build_greedy_graph(const BSG & og, const std::vector<boost::dynamic_bitset<
 
   const unsigned num_states = og.num_states();
   auto states_in_sets = boost::dynamic_bitset<>(num_states, false);
+  auto og_idx_to_ss_idx = std::vector<unsigned>(num_states, 0);
   std::vector<std::vector<unsigned>> state_sets;
 
   const auto build_new_stateset = [&](const unsigned & start_ind){
-    const auto new_stateset = get_greedy_compat_set(start_ind, incompat);
-    for (const auto & i : new_stateset) states_in_sets.set(i);
+    const auto new_stateset = get_greedy_compat_set(start_ind, incompat, states_in_sets);
+    const unsigned new_stateset_idx = state_sets.size();
+    cout << "stateset idx=" << new_stateset_idx << endl;
+    cout << "  contains: ";
+    for (const auto & i : new_stateset) {
+      cout << i << ", ";
+      states_in_sets.set(i);
+      og_idx_to_ss_idx[i] = new_stateset_idx;
+    }
+    cout << endl;
     state_sets.emplace_back(new_stateset);
-    return (state_sets.size()-1);
   };
-
-  build_new_stateset(0);
-
   // note: this can probably be done faster with the dynamic bitset iterator
   for (unsigned s=0; s<num_states; ++s) {
     if (states_in_sets[s]) continue;
-    unsigned new_stateset_idx = build_new_stateset(s);
+    build_new_stateset(s);
   }
 
   // all states should be in sets now. lets print them i guess
@@ -205,54 +206,106 @@ void build_greedy_graph(const BSG & og, const std::vector<boost::dynamic_bitset<
 
   // THIS IS THE PART WHERE WE BUILD IT INTO A NEW GRAPH
 
+  // auto merged_og = make_merged_mutable_BSG(og);
+
   auto new_g = mutable_BSG();
   const unsigned new_state_count = state_sets.size();
   new_g.add_states(new_state_count);
-
-  struct BSDD_Edge {
-    BSDD cond;
-    unsigned dest;
-  };
 
   // for each new stateset (and therefore new state, with the same index)
   for (unsigned ss_idx=0; ss_idx<new_state_count; ++ss_idx) {
     const auto & ss = state_sets[ss_idx];
     // assert (ss.size()>1);
 
+    // let's manually check this state_set to make sure everything is
+    // marked as compatible.
+    for (unsigned a=0; a<ss.size(); ++a) {
+      for (unsigned b=0; b<ss.size(); ++b) {
+        if (incompat[ss[a]][ss[b]]) {
+          cout << "state set " << ss_idx << " doesn't seem intercompatible" << endl;
+          cout << "counterexample: " << ss[a] << " and " << ss[b] << endl;
+          assert(false);
+        }
+      }
+    }
+
     // for each input letter...
     for (const auto & letter : apinfo.masked_input_letters) {
-      // look through each og state, gathering the *intersection* of
+      // look through each merged_og state, gathering the *intersection* of
       // all possible conditions that lead to all possible destinations.
       // we only accept a destination if all states in the stateset can go to it
       // with this input letter, and we keep the condition that allows this, but
       // there could be multiple destinations that match this requirement, so
       // it's a bit tricky to keep track of.
 
-      std::vector<BSDD_Edge> current_matches;
-      
-      for (const auto & e : og.out_matching(ss[0], letter)) {
+      auto letter_cond = BSC(letter, apinfo.input_mask);
 
-      }
+      std::list<BSG_Edge> current_matches;
+      for (const auto & e : og.out_matching(ss[0], letter_cond))
+        current_matches.emplace_back(e.cond, og_idx_to_ss_idx[e.dest]);
 
-      const auto collide_match = [&](const BSG_Edge & e){
-        // we need to make sure this destination is already in the list
-        // (or we return false)
-        bool match_found = false;
-        for (auto & oe : current_matches) if (e.dest == oe.dest) {
-          if (e.cond.intersects(oe.cond)) {
-            match_found = true;
-            oe.cond &= e.cond;
+
+      for (unsigned s=1; s<ss.size(); ++s) {
+        // intersect 'current_matches' with matching edges in 'state'.
+        // cout << "ss[s]=" << ss[s] << endl;
+
+        // cout << endl << "current_matches:" << endl;
+        // for (const auto & e : current_matches)
+        //   cout << " - " << e << endl;
+        // og.dump_state_matching(ss[s], letter_cond);
+
+        for (auto it=current_matches.begin(); it!=current_matches.end(); ++it) {
+          bool found_match = false;
+          // cout << " xx " << endl;
+          for (const auto & e : og.out_matching(ss[s], letter_cond)) {
+            // cout << "matching edge: " << e << endl;
+            // cout << "transformed dest: " << og_idx_to_ss_idx[e.dest] << endl;
+            if (og_idx_to_ss_idx[e.dest] == it->dest && it->cond.intersects(e.cond)) {
+              it->cond &= e.cond;
+              found_match = true;
+              // cout << "  yes" << endl;
+            } else {
+              // cout << "  no" << endl;
+            }
           }
-        }
-        return match_found;
-      };
-
-      for (const unsigned & og_st : ss) {
-        for (const auto & e : og.out_matching(og_st, letter)) {
-          collide_match(e);
+          // this edge option in 'current_matches' doesn't match anything in this
+          // state's matching edges. we need to therefore remove it.
+          if (!found_match)
+            current_matches.erase(it);
         }
       }
+      if (current_matches.empty()) {
+        // something went wrong here
+        cout << "og state count = " << num_states << endl;
+        cout << "ss count = " << state_sets.size() << endl;
+        cout << "this ss length = " << ss.size() << endl;
+        cout << "ss_idx = " << ss_idx << endl;
+
+        cout << "current_matches:" << endl;
+        for (const auto & e : current_matches)
+          cout << " - " << e << endl;
+
+        cout << "some specific debug info" << endl;
+
+        og.dump_state(2);
+        og.dump_state(9);
+        og.dump_state_matching(2, letter_cond);
+        og.dump_state_matching(9, letter_cond);
+
+        throw std::runtime_error("looks like we built a stateset that isn't actually intercompatible?");
+      }
+      
+      // at this point, 'current_matches' holds edge(s) that satisfy all states in the
+      // state set. we can just pick any one destination and use that for our edge.
+      unsigned edge_dest = current_matches.front().dest;
+      BSC edge_cond = current_matches.front().cond;
+      edge_cond.lock_values_within_mask(apinfo.output_mask);
+      new_g.add_edge(ss_idx, og_idx_to_ss_idx[edge_dest], edge_cond);
     }
+    // ok now every letter is done.
+  }
+  // and every stateset is done
+}
 
 
     // iterate through the edges of the first state
@@ -295,12 +348,11 @@ void build_greedy_graph(const BSG & og, const std::vector<boost::dynamic_bitset<
 
     // }
 
-    }
-  }
+  //   }
+  // }
 
   // ensure_input_completeness(init_stateset, og, new_g, apinfo); // is it possible that it isn't?
 
-}
 
 bool single_state_strategy_exists(const BSG & g, const ap_info & apinfo) {
   for (const unsigned & input_letter : apinfo.masked_input_letters) {

@@ -1,416 +1,8 @@
 #pragma once
-#include "common.hh"
-#include "time.cc"
-#include "safety_games.cc"
-#include <spot/twa/formula2bdd.hh>
-#include <spot/misc/minato.hh>
-
-#include <bit>
-#include <bitset>
-#include <cmath>
-#include <iostream>
-
-#define ASSERT_NOT_FALSE
-
-#define KEEP_DISJ_STRICTLY_DISJOINT 1
-
-#define dout if constexpr (debug) cout
-#define ddout if (debug) cout
-
-#ifdef ASSERT_NOT_FALSE
-  #define CANT_BE_FALSE(bsc) assert(!bsc.is_false())
-  #define THIS_CANT_BE_FALSE assert(!is_false())
-#else
-  #define CANT_BE_FALSE(bsc) 
-  #define THIS_CANT_BE_FALSE 
-#endif
+#include "bsc.cc"
+#include "bdd.cc"
 
 // bitset graphs
-
-// bitset condition
-class BSC {
-  friend class eBSC;
-
-private:
-  size_t truth = 0; // should each AP be true (if we care)
-  size_t pathy = 0; // do we care about each AP?
-
-  inline void set_false() {
-    pathy = 0;
-    truth = 1;
-    auto x = bdd_false;
-  }
-
-  inline void set_true() {
-    pathy = 0;
-    truth = 0;
-  }
-
-public:
-  BSC() : truth{0}, pathy{0} {}
-
-  BSC(const size_t & truth, const size_t & pathy)
-  : truth{truth}, pathy{pathy} {}
-
-  // now I need to handle disjunctions, but it means I might end up being two BSCs.
-  BSC(const bdd & bdd_cond, const ap_info & apinfo) {
-    bdd b = bdd_cond;
-    while (b != bddtrue) {
-      // this is the bdd var index at the top of this bdd tree
-      unsigned const var = bdd_var(b);
-      unsigned const var_idx = apinfo.var_to_ind[var];
-      unsigned const var_mask = 1 << var_idx;
-
-      pathy |= var_mask; // mark that we care about this bit
-
-      // one branch of this bdd must be false - otherwise, it's not a conjunction. think about it.
-      bdd high = bdd_high(b);
-      if (high == bddfalse) {
-        // if this var is high we fail, meaning this bit should be set to 0 (which it defaulted to)
-        // the next part of this conjunction must be in the other branch
-        b = bdd_low(b);
-      } else {
-        // if this var is high we don't fail, meaning this bit should be set to 1.
-        truth |= var_mask;
-        // if this is the case, it must be that the other branch is false, or else this isn't a conjunction.
-        assert(bdd_low(b) == bddfalse);
-        // the next part of this conjunction must be in this branch.
-        b = high;
-      } 
-    }
-  }
-
-  inline unsigned get_pathy() const { return pathy; }
-  inline unsigned get_truth() const { return truth; }
-
-  static std::vector<BSC> from_any_bdd(const bdd & bdd_cond, const ap_info & apinfo, BSC bsc = BSC()) {
-    constexpr bool debug = false;
-    bdd b = bdd_cond;
-      dout << "looking at new BDD" << endl;
-      dout << bdd_cond << endl;
-    while (b != bddtrue) {
-      // this is the bdd var index at the top of this bdd tree
-      unsigned const var = bdd_var(b);
-      unsigned const var_idx = apinfo.var_to_ind[var];
-      unsigned const var_mask = 1 << var_idx;
-
-      // mark that we care about this bit
-      bsc.pathy |= var_mask;
-
-      // one branch of this bdd must be false - otherwise, it's not a conjunction. think about it.
-      bdd high = bdd_high(b);
-      bdd low  = bdd_low(b);
-
-      if constexpr (debug) {
-        cout << "var " << apinfo.ind_to_string[var_idx] << endl;
-        if (high == bddfalse) cout << "high false" << endl;
-        else if (high == bddtrue) cout << "high true" << endl;
-        else cout << "high complex" << endl;
-
-        if (low == bddfalse) cout << "low false" << endl;
-        else if (low == bddtrue) cout << "low true" << endl;
-        else cout << "low complex" << endl;
-      }
-
-      if (high == bddfalse) {
-        // if this is high we fail, meaning this bit should be set to 0 (which we already recorded)
-        // the next part of this conjunction must be in the other branch.
-        b = low;
-      } else if (low == bddfalse) {
-        // if this is low we fail, meaning this bit should be set to 1.
-        // the next part of this conjunction must be in the other branch.
-        bsc.truth |= var_mask;
-        b = high;
-      } else {
-        // neither are false.
-        // here i want to say that neither of the children can be bddtrue, but i'm not sure.
-        // i'll assert it for now and figure out what's wrong if the assertion is wrong.
-        assert(high != bddtrue); assert (low != bddtrue);
-        // the rest of everything should be handled in two passes i think
-        auto false_branch = from_any_bdd(low, apinfo, bsc);
-        bsc.truth |= var_mask;
-        auto true_branch = from_any_bdd(high, apinfo, bsc);
-        
-        true_branch.reserve(true_branch.size()+false_branch.size());
-        true_branch.insert(true_branch.end(), false_branch.begin(), false_branch.end());
-        return true_branch;
-      }
-    }
-    return {bsc};
-  }
-
-  inline bool is_false() const {
-    return (pathy == 0 && truth == 1);
-  }
-
-  inline bool not_false() const {
-    return (pathy != 0 || truth != 1);
-  }
-
-  inline bool is_true() const {
-    return (pathy == 0 && truth == 0);
-  }
-
-  // whether or not a letter is accepted by this BSG.
-  bool accepts_letter(const unsigned & letter) const {
-    // "letter & pathy" masks away bits in letter that this BSC doesn't care about,
-    // and the result is compared to `truth`, as we assume always that
-    // truth & pathy == truth for a valid BSC.
-    if (pathy == 0) return (truth != 1);
-    return ((letter & pathy) == truth);
-  }
-
-  unsigned example_accepting_letter() const {
-    assert (not_false());
-    return truth;
-  }
-
-  void lock_values_within_mask(const unsigned & mask) {
-    pathy |= mask;
-  }
-
-  void check_validity() const {
-    if (pathy == 0) {
-      if (truth == 0) return;
-      if (truth == 1) return;
-      throw runtime_error("this bdd is invalid! :(");
-    }
-    if ((truth & (~pathy)) != 0) {
-      throw runtime_error("this bdd is invalid! :(");
-    }
-  }
-
-  // bool accepts_letter(const unsigned & letter) const {
-  //   THIS_CANT_BE_FALSE;
-  //   return ((letter & pathy) == truth);
-  // }
-
-  // whether or not a condition has some intersection with another condition.
-  bool intersects(const BSC & other) const {
-    THIS_CANT_BE_FALSE; CANT_BE_FALSE(other);
-    // if the two conditions don't care about any of the same bits, then
-    // this is trivially true. if they do, we only need to check that the bits
-    // that both conditions care about are the same.
-    const unsigned common_pathy = pathy & other.pathy;
-    if (common_pathy == 0) return true;
-    return ((truth & common_pathy) == (other.truth & common_pathy));
-  }
-
-  bool intersects_masked(const BSC & other, const unsigned & mask) const {
-    const unsigned masked_common_pathy = pathy & other.pathy & mask;
-    if (masked_common_pathy == 0) return true;
-    return ((truth & masked_common_pathy) == (other.truth & masked_common_pathy));
-  }
-
-  static BSC intersection(const BSC & bsc, const BSC & other) {
-    CANT_BE_FALSE(bsc); CANT_BE_FALSE(other);
-    const unsigned common_pathy = bsc.pathy & other.pathy;
-    if (common_pathy != 0 && ((bsc.truth & common_pathy) != (other.truth & common_pathy))) {
-      // we contradict.
-      return BSC::False();
-    } else {
-      // we don't contradict.
-      return BSC(bsc.truth | other.truth, bsc.pathy | other.pathy);
-    }
-  }
-  
-
-  static BSC masked_intersection(const BSC & bsc, const BSC & other, const unsigned & mask) {
-    CANT_BE_FALSE(bsc); CANT_BE_FALSE(other);
-    const unsigned common_pathy = bsc.pathy & other.pathy & mask;
-    if (common_pathy != 0 && ((bsc.truth & common_pathy) != (other.truth & common_pathy))) {
-      // we contradict.
-      return BSC::False();
-    } else {
-      // we don't contradict.
-      return BSC(mask & (bsc.truth | other.truth), mask & (bsc.pathy | other.pathy));
-    }
-  }
-
-  bool encapsulates(const BSC & other) {
-    // do I encapsulate all configurations in 'other'?
-    throw std::runtime_error("todo: implement me");
-    return false;
-  }
-
-  // whether or not a condition has some intersection with another condition.
-  bool intersects_(const BSC & other) const {
-    // we consider the false case first, saying that false does not intersect
-    // with anything except false, then we defer to the normal method.
-    if (is_false()) return other.is_false();
-    if (other.is_false()) return false;
-    return intersects(other);
-  }
-
-  // a totally apathetic BSC is the 'true' condition.
-  inline static BSC True() noexcept {
-    return BSC(0, 0);
-  }
-
-  // we can't naturally encode 'false' in a BSC, so we have the special case
-  // of total apathy but the first bit set to true to indicate 'false'. this
-  // is a special case that is NOT accounted for in most cases, so if you are
-  // using a BSC that might be false, you will want to use the _ version of
-  // any operations you use.
-  inline static BSC False() noexcept {
-    return BSC(1, 0);
-  }
-
-  void conj_with(const BSC & other) {
-    THIS_CANT_BE_FALSE; CANT_BE_FALSE(other);
-    const unsigned common_pathy = pathy & other.pathy;
-    if (common_pathy != 0 && ((truth & common_pathy) != (other.truth & common_pathy))) {
-      // we contradict.
-      set_false();
-    } else {
-      // we don't contradict.
-      pathy |= other.pathy;
-      truth |= other.truth;
-    }
-  }
-
-  BSC conj(const BSC & other) const {
-    const unsigned common_pathy = pathy & other.pathy;
-    if (common_pathy != 0) {
-     if ((truth & common_pathy) != (other.truth & common_pathy)) return BSC::False();
-    } else {
-      if (is_false() || other.is_false()) return BSC::False();
-    }
-
-    // we don't contradict.
-    return BSC(truth | other.truth, pathy | other.pathy);
-  }
-
-  BSC operator&(const BSC & other) const {
-    return conj(other);
-  }
-
-  void conj_with_(const BSC & other) {
-    if (is_false() || other.is_false())
-      set_false();
-    conj_with(other);
-  }
-
-  inline void operator&=(const BSC & other) {
-    conj_with(other);
-  }
-
-  inline bool equals(const BSC & other) const {
-    return (pathy == other.pathy && truth == other.truth);
-  }
-
-  inline bool operator==(const BSC & other) const {
-    return (pathy == other.pathy && truth == other.truth);
-  }
-
-  inline bool operator!=(const BSC & other) const {
-    return (truth != other.truth || pathy != other.pathy);
-  }
-
-  // checks whether the other BSC is included within this one.
-  // that is to say any letter accepted by 'other' will also be
-  // accepted by this.
-  bool includes(const BSC & other) {
-    const unsigned common_pathy = pathy & other.pathy;
-    if ((truth & common_pathy) != (other.truth & common_pathy)) {
-      // we don't intersect; we couldn't possibly include the other
-      return false;
-    } else if (pathy == common_pathy) {
-      // the other one is more specific, so we include it.
-      return true;
-    }
-    return false;
-  }
-
-  // mask in-place
-  void mask(const unsigned & mask_bits) {
-    pathy &= mask_bits;
-    truth &= mask_bits;
-  }
-
-  // make a copy of this BSC, but masked
-  BSC masked(const unsigned & mask_bits) const {
-    return BSC(truth & mask_bits, pathy & mask_bits);
-  }
-
-  bdd to_bdd(const ap_info & apinfo) const {
-    if (pathy == 0) {
-      if (truth == 0) return bdd_true();
-      return bdd_false();
-    }
-    bdd output = bdd_true();
-    unsigned pathy_copy = pathy;
-    unsigned truth_copy = truth;
-    for (const auto & var : apinfo.ind_to_var) {
-      if (pathy_copy & 1) {
-        // we care about this bit
-        if (truth_copy & 1) {
-          output &= bdd_ithvar(var);
-        } else {
-          output &= bdd_nithvar(var);
-        }
-      }
-      pathy_copy >>= 1;
-      truth_copy >>= 1;
-    }
-    return output;
-  }
-
-  string s(const ap_info & apinfo) const {
-    stringstream out;
-    auto x = apinfo.ind_to_string.cbegin();
-    print_to_ss(out, x);
-    return out.str();
-  }
-
-  string s() const {
-    stringstream out;
-    print_to_ss(out);
-    return out.str();
-  }
-
-  void print_to_ss(ostream & out) const {
-    auto x = index_transform_iter<string, index_to_label>().begin();
-    print_to_ss(out, x);
-  }
-
-  template<class iterator_type>
-  void print_to_ss(ostream & out, iterator_type it) const {
-    unsigned truth_copy = truth;
-    unsigned pathy_copy = pathy;
-
-    if (pathy == 0) {
-      if (truth == 0)
-        out << "TRUE";
-      else if (truth == 1)
-        out << "FALSE";
-      else
-        out << "BROKEN_CONDITION";
-    }
-
-    unsigned idx = 0;
-    while (truth_copy != 0 || pathy_copy != 0) {
-      string ap_string = it.operator*();
-      if (pathy_copy & 0b1) {
-        if (truth_copy & 0b1)
-          out << ap_string;
-        else
-          out << '^' << ap_string;
-      }
-      truth_copy >>= 1;
-      pathy_copy >>= 1;
-      ++idx;
-      ++it;
-    }
-  }
-
-  std::tuple<BSC, BSC> split_at_first_var() const {
-    assert(pathy != 0);
-    const unsigned np_bit = pathy & -pathy;
-    return make_tuple(BSC(truth & np_bit, np_bit), BSC(truth & ~np_bit, pathy ^ np_bit));
-  }
-
-};
 
 struct BSG_Edge {
   BSC cond;
@@ -423,6 +15,11 @@ struct BSG_Edge {
   : cond{cond}, dest{dest} {}
 };
 
+ostream & operator<< (ostream &out, const BSG_Edge & e) {
+  out << "BSG_Edge: cond=" << e.cond << ", dest=" << e.dest;
+  return out;
+}
+
 struct BSG_State {
   unsigned first_edge_idx;
   unsigned num_edges;
@@ -433,9 +30,8 @@ class BSG {
 private:
   std::vector<BSG_State> states;
   std::vector<BSG_Edge> edges;
-  // std::span<BSG_Edge> edges_span;
 public:
-  BSG(twa_graph_ptr g, const ap_info & apinfo) {
+  BSG(const twa_graph_ptr & g, const ap_info & apinfo) {
     const unsigned num_states = g->num_states();
     states.reserve(num_states); // we will need exactly this many nodes
     edges.reserve(g->num_edges()); // we will need at least this many edges (if it gets too much, it means we are splitting edges, which we haven't implemented yet)
@@ -463,12 +59,24 @@ public:
     return span_iter<BSG_Edge>(&edges, states[s].first_edge_idx, states[s].num_edges);
   }
 
-  std::vector<BSG_Edge> & out_matching(const unsigned & s, const unsigned & letter) const {
+  std::vector<BSG_Edge> out_matching(const unsigned & s, const BSC & cond) const {
     std::vector<BSG_Edge> out;
     for (const auto & e : this->out(s))
-      if (e.cond.accepts_letter(letter))
+      if (e.cond.intersects(cond))
         out.emplace_back(e);
     return out;
+  }
+
+  void dump_state(const unsigned & s) const {
+    cout << "State " << s << " Edges:" << endl;
+    for (const auto & e : out(s))
+      cout << " - " << e << endl;
+  }
+
+  void dump_state_matching(const unsigned & s, const BSC & cond) const {
+    cout << "State " << s << " Edges matching cond " << cond.s() << ":" << endl;
+    for (const auto & e : out_matching(s, cond))
+      cout << " - " << e << endl;
   }
 
   const unsigned num_states() const {
@@ -494,7 +102,6 @@ class mutable_BSG {
 private:
   unsigned state_count;
   std::vector<std::vector<BSG_Edge>> edges;
-  // std::span<BSG_Edge> edges_span;
 public:
   mutable_BSG() {
   }
@@ -514,742 +121,89 @@ public:
     edges[src].emplace_back(cond, dest);
   }
 
+  const std::vector<BSG_Edge> & out(const unsigned & s) const {
+    return edges[s];
+  }
+
+  std::vector<BSG_Edge> out_matching(const unsigned & s, const unsigned & letter) const {
+    std::vector<BSG_Edge> out;
+    for (const auto & e : edges[s]) {
+      if (e.cond.accepts_letter(letter))
+        out.emplace_back(e);
+    }
+    return out;
+  }
+
 };
 
 
 
 
+struct BSDDG_Edge {
+  BSDD cond;
+  unsigned dest;
 
+  BSDDG_Edge(const BSDD & cond, unsigned dest)
+  : cond{cond}, dest{dest} {}
 
+  // static mutable_BSG_Edge from_BSG_Edge(const BSG_Edge & e) {
 
-/* extended BSGs */
-
-struct eBSC {
-  std::list<BSC> options;
-
-  // the minimisation feature may not be needed really, since we have
-  // taut checking now. but for now we do a minimisation every now and then.
-  static const unsigned changes_between_minimisation = 100;
-  unsigned potentially_simpifiable_changes = 0;
-
-  // tracks whether it may be worth performing a (new) taut check.
-  unsigned growth_since_taut_check = false;
-
-  /* note: the inverse is an OVERAPPROXIMATION of the inverse.
-    The invariant is that inverse contains some truth that is not held
-    in this eBSC (if there is one). */
-  std::list<BSC> inverse;
-  
-  // BSC bsc;
-  // eBSC * next = nullptr;
-
-  // eBSC() {
-  //   // the default eBCS is FALSE
   // }
+};
 
-  // eBSC(BSC bsc) {
-  //   if (bsc.not_false()) options.push_front(bsc);
-  // }
-
+class BSDDG {
 private:
-  eBSC() {
-    // the default eBSC is FALSE
-    inverse.emplace_back(0,0); // inverse = true
-  }
-
-  void set_false() {
-    // set to FALSE
-    potentially_simpifiable_changes = 0;
-    options.clear();
-    inverse.clear();
-    inverse.emplace_back(0,0); // inverse = true
-  }
-
-  void set_true() {
-    // set to FALSE
-    potentially_simpifiable_changes = 0;
-    options.clear();
-    inverse.clear();
-    options.emplace_back(0,0); // options = true
-  }
-
-  void invalidate_inverse_cache() {
-    inverse.clear();
-    inverse.emplace_back(0,0); // inverse = true
-  }
-
+  unsigned state_count;
+  std::vector<std::vector<BSDDG_Edge>> edges;
+  BSDD mem = BSDD(true);
 public:
-
-  inline static eBSC False() {
-    return eBSC();
+  BSDDG() {
   }
 
-  static eBSC True() {
-    eBSC out = eBSC();
-    out.options.emplace_front(0,0);
-    out.inverse.clear();
-    return out;
+  unsigned add_state() {
+    edges.emplace_back();
+    return ++state_count;
   }
 
-  static eBSC from_BSC(BSC bsc) {
-    if (bsc.not_false()) {
-      eBSC out = eBSC();
-      out.options.emplace_front(bsc);
-      return out;
-    } else {
-      return eBSC::False();
-    }
-  }
-
-
-  /* attempt to minimise this  eBSC. return true if you did any
-    "hard work" in the process. */
-  bool minimise() {
-    if (potentially_simpifiable_changes >= changes_between_minimisation) {
-      full_minimise();
-      return true;
-    }
-    return false;
-  }
-
-private:
-  void full_minimise() {
-    constexpr bool debug = false;
-    // assert(!is_simple_true());
-    dout << "--- minimising ";
-    dout << s() << endl;
-    
-    auto it_primary = options.begin();
-    auto it_secondary = options.begin();
-    ++it_secondary;
-
-    bool primary_changed = false;
-    bool secondary_changed = false;
-
-    bool reuse_primary = false; // r = retry this primary option.
-
-    while (it_primary != options.end()) {
-      while (it_secondary != options.end()) {
-        if (it_secondary == it_primary) {
-          ++it_secondary;
-          continue;
-        }
-
-        dout << "minim compare: " << it_primary->s() << " | " << it_secondary->s() << endl;
-
-        unsigned x = it_primary->pathy + it_secondary->pathy;
-
-        string pre = it_primary->s() + " vs " + it_secondary->s();
-        disj_with_single_disjoint_inputs(*it_primary, *it_secondary, primary_changed, secondary_changed);
-
-        // making sure that primary points to the leftmost item.
-        if (primary_changed || secondary_changed) {
-          dout << "action: " << pre << endl;
-          dout << "now:    " << it_primary->s() << " vs " << it_secondary->s() << endl;
-          dout << s() << endl;
-
-          if (it_primary->is_true() || it_secondary->is_true()) return set_true();
-
-          if (it_secondary->is_false()) {
-            options.erase(it_secondary);
-            reuse_primary = true;
-            dout << "secondary deleted" << endl;
-            dout << s() << endl;
-            break;
-          } else {
-            // only one has changed - if they both changed, secondary would be false.
-            assert (!primary_changed || !secondary_changed);
-            if (primary_changed) {
-              reuse_primary = true;
-              dout << "primary changed" << endl;
-              break;
-            } else if (secondary_changed) {
-              // move 'secondary' to just before 'primary'.
-              options.insert(it_primary, *it_secondary);
-              options.erase(it_secondary);
-              --it_primary;
-              reuse_primary = true;
-              dout << "secondary changed. weird." << endl;
-              dout << s() << endl;
-              break;
-            }
-          }
-        } else {
-          dout << "no change" << endl;
-        }
-        ++it_secondary;
-      }
-
-      if (reuse_primary) {
-        reuse_primary = false;
-        it_secondary = options.begin();
-      } else {
-        ++it_primary;
-        it_secondary = it_primary;
-        it_secondary++;
-      }
-    }
-  }
-
-  inline void become_copy_of(const eBSC & other) {
-    copy_list_into(other.options, options);
-    potentially_simpifiable_changes = other.potentially_simpifiable_changes;
-    copy_list_into(other.inverse, inverse);
-    growth_since_taut_check = true;
-  }
-
-public:
-  void check_validity() const {
-    unsigned cur_index = 0;
-    bool has_true = false;
-    for (const auto & bsc : options) {
-      bsc.check_validity();
-      if (bsc.is_false()) {
-        throw runtime_error("this eBSC contains False options");
-      } else if (bsc.is_true()) {
-        has_true = true;
-      }
-      cur_index++;
-    }
-    if (has_true && cur_index > 1) {
-      throw runtime_error("this eBSC contains True option, but isn't the True eBSC.");
-    }
-  }
-
-private:
-  inline void note_simplifiable_change() noexcept {
-    ++potentially_simpifiable_changes;
-  }
-
-
-  std::list<BSC> ensure_disjoint(const BSC & bsc, const BSC & other) {
-    auto out = std::list<BSC>();
-    const unsigned common_pathy = bsc.pathy & other.pathy;
-    unsigned new_pathy = bsc.pathy & ~other.pathy;
-    assert (new_pathy != 0);
-    unsigned cumul_pathy = 0;
-    unsigned cumul_truth = 0;
-    while (new_pathy) {
-      // first set bit of new_pathy
-      const unsigned np_bit = new_pathy & -new_pathy;
-      new_pathy ^= np_bit;
-      auto new_cond = BSC(other.truth | cumul_truth | (np_bit & ~bsc.truth), other.pathy | cumul_pathy | np_bit);
-      out.emplace_back(new_cond);
-      cumul_pathy |= np_bit;
-      cumul_truth |= (np_bit & bsc.truth);
-    }  
-    return out;
+  void add_states(const unsigned & new_state_count) {
+    for (unsigned i=0; i<new_state_count; ++i)
+      edges.emplace_back();
+    state_count += new_state_count;
   }
   
-
-  /* Perform a "single-step" disjunction between 'bsc' and the condition(s) in 'others'.
-     We assume that this condition is not TRUE or FALSE, and that 'other' does not
-     contain TRUE or FALSE.
-     'bsc' and 'others' may me modified in-place. 'other' is emptied if there are
-     no more conditions needed to disjoin.
-     'bsc_changed' and 'other_changed' are set to true if 'bsc' and 'others' are changed.
-  */
-  void disj_with_single(BSC & bsc, std::list<BSC> & others, bool & bsc_changed, bool & other_changed) {
-    other_changed = false;
-    bsc_changed = false;
-
-    constexpr bool debug = false;
-
-    dout << "performing single disj. bsc = " << bsc.s() << endl;
-
-    for (auto it = others.begin(); it != others.end(); ++it) {
-      auto & other = *it;
-      dout << " against: " << other.s() << endl;
-
-      const unsigned common_pathy = bsc.pathy & other.pathy;
-      const unsigned truth_diff = bsc.truth ^ other.truth;
-      const unsigned common_truth_diff = truth_diff & common_pathy;
-
-      if (common_truth_diff) {
-        dout << "c1" << endl;
-        // we disagree on at least one AP - no intersection.
-        if (has_single_bit(common_truth_diff)) {
-          dout << "s1" << endl;
-          // there is exactly one AP that we disagree on - we can do some
-          // clever stuff here.
-          if (bsc.pathy == other.pathy) {
-            dout << "sa" << endl;
-            // eg: ABC | AB^C = AB
-            bsc.pathy ^= common_truth_diff;
-            bsc.truth &= bsc.pathy;
-            others.erase(it);
-            bsc_changed = true;
-            other_changed = true;
-          // } else if (other.pathy == common_pathy) {
-          } else if (false) {
-            dout << "sb" << endl;
-            // eg: ^ABC^D | BD = ^ABC | BD <- colliding still!
-            // eg: ^ABC^D | BD = ^ABC | ABD | B^CD <- this is better
-            unsigned new_pathy = bsc.pathy ^ common_pathy;
-
-            bsc.pathy ^= common_truth_diff;
-            bsc.truth &= bsc.pathy;
-            bsc_changed = true;
-            // the bits we care about that the other condition doesn't.
-            
-          } else if (false) {
-          // } else if (bsc.pathy == common_pathy) {
-            dout << "sc" << endl;
-            // eg: ^B | ^ABC = ^B | ^AC
-            other.pathy ^= common_truth_diff;
-            other.truth &= other.pathy;
-            other_changed = true;
-          } else {
-            dout << "sd__" << endl;
-            // eg: ABC | B^CD
-            // eg: ^A^BC | BD  
-            // no simplification to be made here
-          }
-        } else {
-          dout << "s0__" << endl;
-          // there is no collision and no simple trick.
-          // nothing we can do here.
-        }
-      } else {
-        dout << "c0" << endl;
-        // there is no difference in the things we both care about, which means
-        // there is an intersection of conditions.
-        if (bsc.pathy == common_pathy) {
-          dout << "c1" << endl;
-          // 'bsc' subsumes 'other'
-          // eg: A^B | A^BC = A^B
-          // eg: A^BC | A^BC = A^BC
-          others.erase(it);
-          other_changed = true;
-        } else if (other.pathy == common_pathy) {
-          dout << "c2" << endl;
-          // 'other' subsumes 'bsc'
-          // eg: A^BC | A^B = A^B
-          bsc.pathy = other.pathy;
-          bsc.truth = other.truth;
-          others.erase(it);
-          bsc_changed = true;
-          other_changed = true;
-        } else {
-          // eg: ABC | BD = ABC | ^ABD | B^CD
-          dout << "tricky" << endl;
-          // now we know the conditions have an intersection, but don't subsume
-          // one another. This is a tricky case - we want to perform a kind of
-          // subtraction: other = other - this, except this might mean that
-          // there is more than one new 'other' to deal with. however, all of the
-          // new 'other's will be strictly disjunctive, so we won't need to start again.
-          unsigned new_pathy = bsc.pathy & ~other.pathy;
-          assert (new_pathy != 0);
-          unsigned cumul_truth = other.truth;
-          unsigned cumul_pathy = other.pathy;
-          bool first = true;
-          while (new_pathy) {
-            // first set bit of new_pathy
-            const unsigned np_bit = new_pathy & -new_pathy;
-            new_pathy ^= np_bit;
-            const unsigned new_truth = cumul_truth | (np_bit & ~bsc.truth);
-            const unsigned new_pathy = cumul_pathy | np_bit;
-            if (first) {
-              first = false;
-              other.truth = new_truth;
-              other.pathy = new_pathy;
-            } else {
-              others.emplace_front(new_truth, new_pathy);
-            }
-            cumul_truth |= (np_bit & bsc.truth);
-            cumul_pathy |= np_bit;
-          }
-          other_changed = true;
-        }
-      }
-    }
-    if (bsc_changed || other_changed) note_simplifiable_change();
-  }
-
-  /* a version that assumes that the input conditions do not collide.
-     this is used for minimisation. */
-  void disj_with_single_disjoint_inputs(BSC & bsc, BSC & other, bool & bsc_changed, bool & other_changed) {
-    other_changed = false;
-    bsc_changed = false;
-
-    constexpr bool debug = true;
-
-    const unsigned common_pathy = bsc.pathy & other.pathy;
-    const unsigned truth_diff = bsc.truth ^ other.truth;
-    const unsigned common_truth_diff = truth_diff & common_pathy;
-
-    if (common_truth_diff == 0) {
-      cout << "this shouldn't happen" << endl;
-      cout << bsc.s() << endl;
-      cout << other.s() << endl;
-      cout << "common_pathy " << binary_string(common_pathy, 5) << endl;
-      cout << "truth_diff " << binary_string(truth_diff, 5) << endl;
-      cout << "common_truth_diuff " << binary_string(common_truth_diff, 5) << endl;
-      assert(false);
-      assert (common_truth_diff != 0);
-    }
-
-    if (!has_single_bit(common_truth_diff)) return;
-
-    // there is exactly one AP that we disagree on - we can do some
-    // clever stuff here.
-    if (bsc.pathy == other.pathy) {
-      // eg: ABC | AB^C = AB
-      bsc.pathy ^= common_truth_diff;
-      bsc.truth &= bsc.pathy;
-      bsc_changed = true;
-      other.set_false();
-      other_changed = true;
-    } else {
-      // eg: ABC | B^CD
-      // no simplification to be made here
-    }
-
-    if (bsc_changed || other_changed) note_simplifiable_change();
-  }
-
-public:
-  /* not currently used */
-  void disj_with(BSC cond) {
-    const constexpr bool debug = false;
-    dout << "performing full disj. current: " << s() << endl;
-    dout << " against " << cond.s() << endl;
-    if (cond.is_false()) return;
-    // others_top = conditions that need to be compared with all conditions.
-    std::stack<BSC> others_top;
-    others_top.push(cond);
-    bool bsc_changed = false;
-    bool other_changed = false;
-
-    growth_since_taut_check = true;
-
-    while (!others_top.empty()) {
-      // others = conditions that need to be compared with following conditions.
-      std::list<BSC> others = {others_top.top()}; others_top.pop();
-
-      for (auto it = options.begin(); it != options.end(); ++it) {
-        BSC & bsc = *it;
-        disj_with_single(bsc, others, bsc_changed, other_changed);
-        if (bsc_changed) {
-          if (bsc.is_true()) return set_true();
-          others_top.push(bsc);
-          options.erase(it);
-        }
-        if (other_changed && others.empty()) break;
-      }
-      if (!others.empty()) {
-        // there's at least one leftover - add the first
-        options.push_back(others.front());
-        others.pop_front();
-        while (!others.empty()) {
-          // there are even more leftovers - add them to 'others_top' so
-          // they will be compared to everything again (this is overkill - they
-          // really only need to be compared to the ones that are getting added
-          // at the end.
-          others_top.push(others.front());
-          others.pop_front();
-        }
-      }
-      // if (!others.empty()) {
-      //   // options.insert(options.end(), others.begin(), others.end());
-      // }
-    }
-  }
-
-public:
-  // perform a proper disjunction with 'other'.
-  // return TRUE iff this eBSC was modified by the disjunction,
-  // FALSE if this eBSC subsumed 'other'.
-  void disj_with(const eBSC & other) {
-    if (is_false())
-      return become_copy_of(other);
-
-    if(other.is_false())
-      return;
-
-    bool changed = false;
-    for (const BSC & bsc : other.options)
-      disj_with(bsc);
-  }
-
-  bdd to_bdd(const ap_info & apinfo) const {
-    bdd out = bdd_false();
-    for (const auto & bsc : options)
-      out |= bsc.to_bdd(apinfo);
-    return out;
-  }
-
-  void operator|=(const BSC & other) {
-    disj_with(other);
-  }
-
-public:
-  string s(const ap_info & apinfo) const {
-    if (is_false()) return "FALSE";
-    stringstream out;
-    bool first = true;
-    for (const auto & bsc : options) {
-      if (!first) out << " || ";
-      out << bsc.s(apinfo);
-      first = false;
-    }
-    return out.str();
-  }
-
-  string s() const {
-    if (is_false()) return "FALSE";
-    stringstream out;
-    bool first = true;
-    for (const auto & bsc : options) {
-      if (!first) out << " || ";
-      out << bsc.s();
-      first = false;
-    }
-    return out.str();
-  }
-
-private:
-  bool is_simple_true() const {
-    return options.front().is_true();
-  }
-
-public:
-
-  bool check_taut() {
-    if (is_simple_true()) {
-      growth_since_taut_check = false;
-      return true;
-    }
-    if (growth_since_taut_check) {
-      if (full_check_tautology()) {
-        return true;
-      } else {
-        // minimise();
-        return false;
-      }
-    }
-    return false;
-  }
-
-  inline bool is_false() const {
-    return options.empty();
-  }
-
-  // conj with basic BSC
-  void conj_with(const BSC & other) {
-    if (is_false()) return;
-    // is_true is efficiently captured by the normal semantics.
-    if (other.pathy == 0) {
-      if (other.truth == 1) set_false();
+  void add_edge(unsigned src, unsigned dest, const BSC & cond) {
+    for (auto & e : edges[src]) if (e.dest == dest) {
+      e.cond |= cond;
       return;
     }
-
-    // since the condition can now 'grow'.
-    invalidate_inverse_cache();
-
-    for (auto it = options.begin(); it != options.end(); ++it) {
-      it->conj_with(other);
-      if (it->is_false()) options.erase(it);
-    }
+    // should these all share the same BDD memory or be separate?
+    // right now they are sharing the memory
+    edges[src].emplace_back(mem.bdd_from_bsc(cond), dest);
   }
 
-  void conj_with(const eBSC & other) {
-    if (is_false())       return;
-    if (is_simple_true())        return become_copy_of(other);
-    if (other.is_false()) return set_false();
-    if (other.is_simple_true())  return;
+  // const std::vector<mutable_BSG_Edge> & out(const unsigned & s) const {
+  //   return edges[s];
+  // }
 
-    // since the condition can now 'grow'.
-    invalidate_inverse_cache();
-
-    std::list<BSC> orig_options;
-    orig_options.swap(options);
-
-    for (const auto & my_option : orig_options) {
-      for (const auto & their_option : other.options) {
-        auto conj_option = my_option & their_option;
-        if (conj_option.not_false())
-          disj_with(my_option & their_option);
-      }
-    }
-  }
-
-  bool full_check_tautology() {
-    growth_since_taut_check = false;
-    constexpr const bool debug = false;
-
-    assert(!is_simple_true());
-
-    if constexpr (debug) {
-      dout << "checking taut on " << s() << endl;
-      dout << "inv:" << endl;
-      for (const auto & inv : inverse) {
-        dout << " - " << inv.s() << endl;
-      }
-    }
-
-    std::stack<std::tuple<std::list<BSC>::iterator, std::list<BSC>::const_iterator>> check_stack;
-
-    auto opt_begin = options.cbegin();
-    auto opt_end   = options.cend();
-
-    for (auto it = inverse.begin(); it != inverse.end(); ++it)
-      check_stack.emplace(it, opt_begin);
-
-    while (!check_stack.empty()) {
-      auto [inv_it, opt_it] = check_stack.top();
-      check_stack.pop();
-      for (; opt_it != opt_end; ++opt_it) {
-        const unsigned common_pathy = opt_it->pathy & inv_it->pathy;
-
-        // if there is no intersection
-        if ((opt_it->truth & common_pathy) != (inv_it->truth & common_pathy)) {
-          dout << "a" << endl;
-          // eg: ABC - A^BC
-          // check the next option
-          continue;
-        }
-
-        // if they are identical -- we can delete this inverse
-        if (opt_it->pathy == inv_it->pathy) {
-          // eg: (inv)ABC - (opt)ABC
-          inverse.erase(inv_it);
-          break;
-        }
-
-        // reminder: the condition with the common pathy is MORE GENERAL
-
-        // the option is more general - we can delete this inverse
-        if (opt_it->pathy == common_pathy) {
-          dout << "b" << endl;
-          // eg: (inv)ABC - (opt)AB
-          inverse.erase(inv_it);
-          break;
-        }
-
-        // if the inverse totally covers the option
-        // .. or if they don't cover eachother
-        // eg: (inv)AB - (opt)ABC
-        // eg: (inv)AB - (opt)BC
-
-        dout << "c" << endl;
-
-        unsigned new_pathy = opt_it->pathy & ~inv_it->pathy;
-
-        assert (new_pathy != 0);
-
-        unsigned cumul_truth = inv_it->truth;
-        unsigned cumul_pathy = inv_it->pathy;
-        bool first = true;
-        while (new_pathy) {
-          dout << "x" << endl;
-          // first set bit of new_pathy
-          const unsigned np_bit = new_pathy & -new_pathy;
-          new_pathy ^= np_bit;
-          unsigned new_truth = cumul_truth | (np_bit & (~opt_it->truth));
-          unsigned new_pathy = cumul_pathy | np_bit;
-
-          if (first) {
-            first = false;
-            // first one - just modify the existing one
-            inv_it->truth = new_truth;
-            inv_it->pathy = new_pathy;
-            // cout << "updated entry to " << inv_it->s() << endl;
-          } else {
-            // others - add them to the stack and store their iterators
-            inverse.emplace_front(new_truth, new_pathy);
-            check_stack.emplace(inverse.begin(), opt_it);
-            // cout << "added entry " << inverse.front().s() << endl;
-          }
-
-          cumul_pathy |= np_bit;
-          cumul_truth |= (np_bit & opt_it->truth);
-          // cout << "cumul " << BSC(cumul_truth, cumul_pathy).s() << endl;
-        }
-      }
-      if (opt_it == opt_end)  {
-        // we got to the end with some counterexample.
-        // this is not a tautology.
-        dout << "taut = false" << endl;
-        dout << "inv:" << endl;
-        if constexpr (debug) {
-          for (const auto & inv : inverse) {
-            dout << " - " << inv.s() << endl;
-          }
-        }
-        return false;
-      }
-    }
-
-    // we never found a counterexample; this must be tautologous.
-    set_true();
-    dout << "taut = true" << endl;
-    return true;
-  }
+  // std::vector<mutable_BSG_Edge> & out_matching(const unsigned & s, const unsigned & letter) const {
+  //   std::vector<mutable_BSG_Edge> out;
+  //   for (const auto & e : edges[s]) {
+  //     if (e.cond.accepts_letter(letter))
+  //       out.emplace_back(e);
+  //   }
+  //   return out;
+  // }
 
 };
 
-ostream & operator << (ostream &out, const BSC & bsc) {
-  bsc.print_to_ss(out);
-  return out;
-}
-
-ostream & operator << (ostream &out, const eBSC & ebsc) {
-  out << ebsc.s();
-  // ebsc.print_to_ss(out);
-  return out;
-}
-
-eBSC operator|(eBSC bsc1, const eBSC & bsc2) {
-  bsc1.disj_with(bsc2);
-  return bsc1;
-}
-
-eBSC operator|(const BSC & bsc1, const BSC & bsc2) {
-  eBSC out = eBSC::from_BSC(bsc1);
-  out.disj_with(bsc2);
-  return out;
-}
-
-eBSC operator&(eBSC bsc1, const eBSC & bsc2) {
-  bsc1.conj_with(bsc2);
-  return bsc1;
-}
-
-inline unsigned random_under(const unsigned & max_excl) {
-   return std::rand() % max_excl;
-}
-
-inline bool random_chance(const unsigned & perc_chance) {
-  return (std::rand() % 100) < perc_chance;
-}
-
-BSC random_BSC(const unsigned & num_bits = 4, const unsigned & perc_false = 10) {
-  if (random_chance(perc_false)) return BSC::False();
-  unsigned max_excl = 1 << num_bits;
-  unsigned pathy = random_under(max_excl);
-  unsigned truth = random_under(max_excl) & pathy;
-  return BSC(truth, pathy);
-}
-
-eBSC random_eBSC(const unsigned & max_depth = 4, const unsigned & num_bits = 4, const unsigned & perc_false = 10) {
-  eBSC out = eBSC::False();
-  unsigned depth = 1 + random_under(max_depth);
-  while (depth-- > 0) {
-    out |= random_BSC(num_bits, perc_false);
+mutable_BSG make_merged_mutable_BSG(const BSG & og) {
+  const unsigned num_states = og.num_states();
+  mutable_BSG g;
+  g.add_states(num_states);
+  for (unsigned s=0; s<num_states; ++s) {
+    for (const auto & e : og.out(s)) {
+      g.add_edge(s, e.dest, e.cond);
+    }
   }
-  return out;
-}
-
-eBSC vrandom_eBSC(const unsigned & max_depth = 4, const unsigned & num_bits = 4, const unsigned & perc_false = 10) {
-  eBSC out = eBSC::False();
-  unsigned depth = 1 + random_under(max_depth);
-  constexpr const bool debug = false;
-  while (depth-- > 0) {
-    auto bsc = random_BSC(num_bits, perc_false);
-    dout << "  adding bsc: " << bsc.s() << endl;
-    out |= bsc;
-    dout << "    is now: " << out.s() << endl;
-  }
-  return out;
+  return g;
 }

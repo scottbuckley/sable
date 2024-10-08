@@ -225,6 +225,13 @@ void copy_list_into(const std::list<T> & from, std::list<T> & to) {
     to.emplace_back(elem);
 }
 
+template <typename T>
+void copy_list_into(const std::vector<T> & from, std::list<T> & to) {
+  to.clear();
+  for (const auto & elem : from)
+    to.emplace_back(elem);
+}
+
 template <typename T, typename S>
 void copy_map_into(const std::map<T,S> & from, std::map<T,S> & to) {
   to.clear();

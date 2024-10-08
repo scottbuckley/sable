@@ -1,5 +1,6 @@
 #pragma once
-#include "bsg.cc"
+#include "bsc.cc"
+#include "ebsc.cc"
 
 class BSDD {
 
@@ -25,7 +26,7 @@ class BSDD {
       return BSC(0, var_mask);
     }
   };
-
+  
   struct BDD_Memory {
     std::vector<BSDD_Node> nodes = std::vector<BSDD_Node>(2);
   };
@@ -279,8 +280,6 @@ public:
       }
     }
 
-    
-
     const unsigned x = make_node(new_var_mask, new_low_idx, new_high_idx);
     // dout << indent << "*" << x << endl;
     return x;
@@ -296,6 +295,24 @@ public:
 
   bool is_false() const {
     return root_idx == false_idx;
+  }
+
+private:
+  bool node_accepts_letter(unsigned node_idx, const unsigned & letter) const {
+    while (node_idx > 1) {
+      if ((memory->nodes[node_idx].var_mask & letter) == 0)
+        node_idx = memory->nodes[node_idx].low_idx;
+      else
+        node_idx = memory->nodes[node_idx].high_idx;
+    }
+    if (node_idx == true_idx) return true;
+    if (node_idx == false_idx) return false;
+    assert(false);
+  }
+public:
+
+  bool accepts_letter(const unsigned & letter) const {
+    return node_accepts_letter(root_idx, letter);
   }
 
   
