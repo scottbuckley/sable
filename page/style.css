@@ -43,3 +43,16 @@ svg {
 span.graph_too_big {
   font-style: italic;
 }
+
+table {
+  border-collapse: collapse;
+}
+
+table, th, td {
+  border: 1px solid grey;
+}
+
+td {
+  padding-left: 0.5ex;
+  padding-right: 0.5ex;
+}

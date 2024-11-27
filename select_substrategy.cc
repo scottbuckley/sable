@@ -370,6 +370,486 @@ bool single_state_strategy_exists(const BSG & g, const ap_info & apinfo) {
   }
   return false;
 }
+enum temp_dest_type {
+    SINGLE_STATE,
+    CONFIRMED_GROUP,
+    NEW_GROUPING,
+    ERROR
+  };
+
+struct dest_in_progress {
+  temp_dest_type dest_type;
+
+  // either the state number or the group number
+  unsigned dest_index;
+
+  // the group of new destinations
+  std::vector<dest_in_progress> group_elements;
+
+  bool forced_edge = false;
+
+  dest_in_progress(const unsigned & dest)
+    : dest_type{SINGLE_STATE}, dest_index{dest}
+    {}
+  
+  dest_in_progress(const temp_dest_type & type, const unsigned & dest)
+    : dest_type{type}, dest_index{dest}
+    {}
+
+  dest_in_progress(const temp_dest_type & type, const unsigned & dest, const std::vector<dest_in_progress> & new_group_elements)
+    : dest_type{type}, dest_index{dest}, group_elements{new_group_elements}
+    {}
+  
+  bool is_impossible_dest() const {
+    return (dest_type == ERROR);
+  }
+
+  bool is_confirmed_group_at(const unsigned & idx) const {
+    return (dest_index == CONFIRMED_GROUP && dest_index == idx);
+  }
+
+  // bool operator!=( const dest_in_progress &other ) const noexcept {
+  //   return (dest_type != other.dest_type)
+  //       && (dest_index != other.dest_index)
+  //       && (forced_edge != other.forced_edge)
+  //       && (group_elements != other.group_elements);
+  // }
+};
+
+ostream & operator<< (ostream &out, const dest_in_progress & e) {
+  if (e.dest_type == SINGLE_STATE)
+    out << "SINGLE [" << e.dest_index << "]";
+  else if (e.dest_type == CONFIRMED_GROUP)
+    out << "CONFIRMED GROUP [" << e.dest_index << "]";
+  else if (e.dest_type == NEW_GROUPING) {
+    out << "HYP GROUP [";
+    for (const auto & s : e.group_elements)
+      out << s << ", ";
+    out << "]";
+  } else if (e.dest_type == ERROR)
+    out << "IMPOSSIBLE";
+  else
+    assert(false);
+  if (e.forced_edge)
+    out << " (!!)";
+  // out << "BSG_Edge: cond=" << e.cond << ", dest=" << e.dest;
+  return out;
+}
+
+inline dest_in_progress simple_old_dest(const unsigned & dest) {
+  return dest_in_progress(dest);
+}
+
+inline dest_in_progress known_group_dest(const unsigned & group_idx) {
+  return dest_in_progress(CONFIRMED_GROUP, group_idx);
+}
+
+inline dest_in_progress new_grouping_dest(const std::vector<dest_in_progress> & new_group_elements) {
+  return dest_in_progress(NEW_GROUPING, 0, new_group_elements);
+}
+
+inline dest_in_progress impossible_dest() {
+  return dest_in_progress(ERROR, 0);
+}
+
+BSDD bsdd = BSDD(false);
+
+auto find_required_edge(mutable_BSG_gen<dest_in_progress> & g, const unsigned & s, const ap_info & apinfo, const bool & true_forced = true) {
+  auto & g_out = g.out(s);
+  for (auto eit = g_out.begin(); eit!=g_out.end(); ++eit) {
+    auto & e = *eit;
+
+    // we only care about checking whether new groupings are forced
+    if (e.dest.dest_type != NEW_GROUPING) continue;
+
+    const bool input_fully_defined = ((e.cond.get_pathy() & apinfo.input_mask) == apinfo.input_mask);
+    if (input_fully_defined) {
+      bool other_options_exist = false;
+      for (auto eit2 = g_out.begin(); eit2!=g_out.end(); ++eit2) {
+        if (!true_forced && (eit2->dest.dest_type == NEW_GROUPING)) continue;
+        if (eit2 == eit) continue;
+        auto & e2 = *eit2;
+        if (e2.cond.intersects_masked(e.cond, apinfo.input_mask)) {
+          other_options_exist = true;
+          break;
+        }
+      }
+      if (!other_options_exist) {
+        return eit;
+      }
+    } else {
+      // this shouldn't be too hard, just need to do some bdd stuff.
+      assert(false);
+      BSDD b = BSDD(false, bsdd);
+      for (auto eit2 = g_out.begin(); eit2!=g_out.end(); ++eit2) {
+        if (eit2 == eit) continue;
+        auto & e2 = *eit2;
+        if (e2.cond.intersects_masked(e.cond, apinfo.input_mask)) {
+          b |= e2.cond.masked(apinfo.input_mask);
+        }
+      }
+    }
+  }
+  return g_out.end();
+}
+
+bool check_for_forced_new_groups(mutable_BSG_gen<dest_in_progress> & g, const unsigned & s, const ap_info & apinfo) {
+  bool some_change = false;
+  auto & g_out = g.out(s);
+  for (auto eit = g_out.begin(); eit!=g_out.end(); ++eit) {
+    auto & e = *eit;
+
+    // we only care about checking whether new groupings are forced
+    if (e.dest.dest_type != NEW_GROUPING) continue;
+
+    const bool input_fully_defined = ((e.cond.get_pathy() & apinfo.input_mask) == apinfo.input_mask);
+    if (input_fully_defined) {
+      bool other_options_exist = false;
+      for (auto eit2 = g_out.begin(); eit2!=g_out.end(); ++eit2) {
+        if (eit2 == eit) continue;
+        auto & e2 = *eit2;
+        if (e2.cond.intersects_masked(e.cond, apinfo.input_mask)) {
+          other_options_exist = true;
+        }
+      }
+      if (!other_options_exist) {
+        e.dest.forced_edge = true;
+        some_change = true;
+      }
+    } else {
+      // this shouldn't be too hard, just need to do some bdd stuff.
+      assert(false);
+      BSDD b = BSDD(false, bsdd);
+      for (auto eit2 = g_out.begin(); eit2!=g_out.end(); ++eit2) {
+        if (eit2 == eit) continue;
+        auto & e2 = *eit2;
+        if (e2.cond.intersects_masked(e.cond, apinfo.input_mask)) {
+          b |= e2.cond.masked(apinfo.input_mask);
+        }
+      }
+    }
+  }
+  return some_change;
+}
+
+bool merge_state_into_group(
+  const unsigned & group_idx,
+  const unsigned & new_state,
+  const BSG & old_g,
+  mutable_BSG_gen<dest_in_progress> & new_g,
+  std::vector<boost::dynamic_bitset<>> & incompat,
+  std::vector<std::vector<unsigned>> & groups,
+  std::vector<unsigned> & state_to_group,
+  const ap_info & apinfo);
+
+bool merge_state_into_group_main(
+const unsigned & group_idx,
+const unsigned & new_state,
+const BSG & old_g,
+mutable_BSG_gen<dest_in_progress> & new_g,
+std::vector<boost::dynamic_bitset<>> & incompat,
+std::vector<std::vector<unsigned>> & groups,
+std::vector<unsigned> & state_to_group,
+const ap_info & apinfo) {
+  cout << "trying to add state " << new_state << " to group idx " << group_idx << endl;
+  // if the new state is already in a group, we shouldn't be using this function
+  assert(state_to_group[new_state] == UINT_MAX);
+
+  // the first thing to do is update the bookkeeping so that we are already
+  // working under the assumption that state [new_state] is already in group [group_idx]
+  assert(groups[group_idx].size() != 0);
+
+  groups[group_idx].push_back(new_state);
+  state_to_group[new_state] = group_idx;
+  for (auto & e : new_g.out(group_idx)) {
+    if (e.dest.dest_type == SINGLE_STATE && e.dest.dest_index == new_state)
+      e.dest = known_group_dest(group_idx);
+  }
+
+  cout << endl << endl << "after first pass" << endl;
+  new_g.dump_all_states();
+  cout << endl << endl;
+
+  for (auto & e : new_g.out(group_idx)) {
+    unsigned num_of_hits = 0;
+    for (const auto & e2 : old_g.out(new_state)) {
+      if (e.cond.intersects(e2.cond)) {
+        ++num_of_hits;
+        if (num_of_hits > 1) {
+          throw std::runtime_error("I wasn't ready for this");
+        }
+
+        // if the conditions arent equal but they intersect, we'll need to think
+        // about what to do there. it's probably not insane but might take extra
+        // bookkeeping.
+        assert (e.cond == e2.cond);
+
+        /* Here we try to merge the new state into the existing edge/dest */
+        auto & d = e.dest;
+        const auto & d2 = e2.dest;
+        if (d.dest_type == SINGLE_STATE) {
+          // d is a simple single state
+          if (d.dest_index == d2) {
+            // we are all good
+          } else if (vec_contains(groups[group_idx], d2)) {
+            // think about what to do here. this is where the new
+            // state is causing this to become a self-edge where it
+            // wasn't before.
+            assert(false);
+          } else {
+            // if the dest *should* be a group but isn't, think about
+            // when that distinction should have been made.
+            assert(state_to_group[d.dest_index] == UINT_MAX);
+
+            // at this point we would require that these two get put into a group together.
+            if (incompat[d.dest_index][d2]) {
+              // this can't happen for incompatibility reasons
+              if (e.dest.forced_edge) return false;
+              e.dest = impossible_dest();
+            } else {
+              // we are forming a new group
+              e.dest = new_grouping_dest({e.dest, d2});
+            }
+          }
+        } else if (d.dest_type == CONFIRMED_GROUP) {
+          // d is an existing confirmed group
+          const auto & dest_group = groups[d.dest_index];
+          if (vec_contains(dest_group, d2)) {
+            // we are all good
+          } else {
+            bool found_problem = false;
+            for (const auto & member : dest_group) {
+              if (incompat[member][d2]) {
+                found_problem = true;
+                break;
+              }
+            }
+            if (found_problem) {
+              if (e.dest.forced_edge) return false;
+              e.dest = impossible_dest();
+            } else {
+              // d2 is not listed as incompatible with any of the states
+              // in the group.
+              e.dest = new_grouping_dest({e.dest, d2});
+            }
+          }
+        } else if (d.dest_type == NEW_GROUPING) {
+          // i think this is ok - we have hypothesis groups in the current
+          // context. i think we just add to this the same as above, but i will
+          // implement this later.
+          throw std::runtime_error("implement me");
+        }
+      }
+    }
+    if (num_of_hits == 0) {
+      if (e.dest.forced_edge) return false;
+      e.dest = impossible_dest();
+    }
+  }
+  // each group edge has (individually) been considered.
+  // first, we cull impossible edges.
+  auto & group_edges = new_g.out(group_idx);
+  for (auto eit = group_edges.begin(); eit!=group_edges.end(); ++eit) {
+    if (eit->dest.is_impossible_dest()) {
+      group_edges.erase(eit);
+    }
+  }
+  // now we check if the state is invalidated by deleting some edges
+  BSDD input_covered = BSDD(false);
+  for (const auto & e : new_g.out(group_idx)) {
+    input_covered |= e.cond.masked(apinfo.input_mask);
+  }
+  if (!input_covered.is_true()) {
+    // not all inputs are covered by the remaining edges. this
+    // state has been invalidated.
+
+    // note: here (or not here, but in this case), we need to deal
+    // with 'undoing' changes made above. this means we are copying
+    // all this stuff at some point.
+    assert(false);
+    return false;
+  }
+
+  // now we have to think about hypothesized groups
+
+  /* for now we treat self-loops the same as other things
+  // the first hyps we will consider are self-loop groups.
+  for (auto & e : new_g.out(group_idx)) {
+    if (e.dest.dest_type == NEW_GROUPING) {
+      if (e.dest.group_elements[0].is_confirmed_group_at(group_idx)) {
+        // this is a self edge!
+        // think about what to do if there's more (or less? nah) than 2.
+        assert (e.dest.group_elements.size() == 2);
+        assert (e.dest.group_elements[1].dest_type == SINGLE_STATE);
+
+        e.dest.forced_edge = true;
+        
+        e.dest.forced_edge = false;
+
+
+
+      }
+    }
+  }
+  */
+
+  // check_for_forced_new_groups(new_g, group_idx, apinfo);
+
+  cout << endl << endl << "after first pass" << endl;
+  new_g.dump_all_states();
+  cout << endl << endl;
+
+  // is there an edge that's absolutely forced?
+  auto eit = find_required_edge(new_g, group_idx, apinfo, true);
+  if (eit != group_edges.end()) {
+    cout << "found a forced edge!" << endl;
+    assert(false);
+  } else {
+    eit = find_required_edge(new_g, group_idx, apinfo, false);
+    cout << "found a semi-forced edge!" << endl;
+    cout << *eit << endl;
+    auto & e = *eit;
+    // if (take_edge_and_fulfill(group_idx, eit, old_g, new_g, incompat, groups, state_to_group, apinfo)) {
+
+    // }
+    assert(false);
+  }
+
+  // check for forced edges
+  for (auto & e : new_g.out(group_idx)) {
+    if (e.dest.forced_edge) {
+      // follow this edge because it's forced
+      assert(false);
+    }
+  }
+
+  // lets say we only get here if the only hypothesis groups
+  // are non-required. this means we just need to guess at one.
+  for (auto eit = group_edges.begin(); eit!=group_edges.end(); ++eit) {
+    auto & e = *eit;
+    if (e.dest.dest_type != NEW_GROUPING) continue;
+
+
+    
+  }
+
+
+
+  return true;
+}
+
+bool merge_state_into_group(
+  const unsigned & group_idx,
+  const unsigned & new_state,
+  const BSG & old_g,
+  mutable_BSG_gen<dest_in_progress> & new_g,
+  std::vector<boost::dynamic_bitset<>> & incompat,
+  std::vector<std::vector<unsigned>> & groups,
+  std::vector<unsigned> & state_to_group,
+  const ap_info & apinfo) {
+    mutable_BSG_gen<dest_in_progress> new_g_copy = new_g;
+    std::vector<boost::dynamic_bitset<>> & incompat_copy = incompat;
+    std::vector<std::vector<unsigned>> groups_copy = groups;
+    std::vector<unsigned> & state_to_group_copy = state_to_group;
+    if (merge_state_into_group_main(
+      group_idx,
+      new_state,
+      old_g,
+      new_g_copy,
+      incompat_copy,
+      groups_copy,
+      state_to_group_copy,
+      apinfo)) {
+      // we like the changes that were made. copy them up.
+      new_g = new_g_copy;
+      incompat = incompat_copy;
+      groups = groups_copy;
+      state_to_group = state_to_group_copy;
+      return true;
+    } else {
+      // we don't like any changes that were made. forget abotu them.
+      return false;
+    }
+}
+
+
+/*
+bool merge_state_into_group_selfloop(
+  const unsigned & group_idx,
+  const unsigned & new_state,
+  const BSG & old_g,
+  mutable_BSG_gen<dest_in_progress> & new_g,
+  std::vector<boost::dynamic_bitset<>> & incompat,
+  std::vector<std::vector<unsigned>> & groups,
+  std::vector<unsigned> & state_to_group,
+  const ap_info & apinfo) {
+    mutable_BSG_gen<dest_in_progress> new_g_copy = new_g;
+    std::vector<boost::dynamic_bitset<>> & incompat_copy = incompat;
+    std::vector<std::vector<unsigned>> groups_copy = groups;
+    std::vector<unsigned> & state_to_group_copy = state_to_group;
+    if (merge_state_into_selfloop_main(
+      group_idx,
+      new_state,
+      old_g,
+      new_g_copy,
+      incompat_copy,
+      groups_copy,
+      state_to_group_copy,
+      apinfo)) {
+      // we like the changes that were made. copy them up.
+      new_g = new_g_copy;
+      incompat = incompat_copy;
+      groups = groups_copy;
+      state_to_group = state_to_group_copy;
+      return true;
+    } else {
+      // we don't like any changes that were made. forget abotu them.
+      return false;
+    }
+}
+*/
+
+void flocc_progressive(const BSG & g, const std::vector<boost::dynamic_bitset<>> & incompat_orig, const ap_info & apinfo) {
+
+  auto incompat = incompat_orig;
+
+  auto new_g = mutable_BSG_gen<dest_in_progress>();
+
+  // for each state in g, what state group is it part of. UINT_MAX means it
+  // has not yet been placed in a group.
+  auto state_to_group = std::vector<unsigned>(g.num_states(), UINT_MAX);
+  
+  // these are the new groups of states.
+  auto groups = std::vector<std::vector<unsigned>>();
+
+  auto make_single_state_group = [&](const unsigned & state_idx) {
+    groups.push_back({state_idx});
+    const unsigned new_group = new_g.add_state();
+    for (const auto & e : g.out(state_idx)) {
+      if (e.dest == state_idx) {
+        new_g.add_edge(new_group, known_group_dest(new_group), e.cond);
+      } else {
+        new_g.add_edge(new_group, simple_old_dest(e.dest), e.cond);
+      }
+    }
+    assert (new_group == groups.size()-1);
+    state_to_group[state_idx] = new_group;
+    return new_group;
+  };
+
+  auto merge_in_state = [&](const unsigned & group_idx, const unsigned & new_state) {
+    merge_state_into_group(group_idx, new_state, g, new_g, incompat, groups, state_to_group, apinfo);
+  };
+
+  unsigned first_group = make_single_state_group(0);
+  // add_single_state(0);
+  merge_in_state(first_group, 1);
+
+  cout << endl << endl;
+  cout << "new graph i guess:" << endl;
+  new_g.dump_all_states();
+
+}
 
 void debug_find_smaller_substrategy(twa_graph_ptr hyp, const ap_info & apinfo) {
   page_text("trying to find a smaller substrategy from the final solved hypothesis ...");
@@ -380,11 +860,18 @@ void debug_find_smaller_substrategy(twa_graph_ptr hyp, const ap_info & apinfo) {
 
   auto bsg = BSG(strat, apinfo);
 
+
+
   // twa_graph_ptr g = bsg.to_twa_graph(strat->get_dict(), apinfo);
   // page_graph(g, "round-trip graph");
 
   auto incompat = incompatible_state_pairs(bsg, apinfo);
-  build_greedy_graph(bsg, incompat, apinfo);
+  // build_greedy_graph(bsg, incompat, apinfo);
+  cout << endl << endl;
+  bsg.dump_all_states();
+  cout << endl << endl;
+
+  // flocc_progressive(bsg, incompat, apinfo);
 
 
 }

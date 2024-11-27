@@ -95,7 +95,7 @@ TWAEdgeIterator * get_edge_iterator(twa_graph_ptr g) {
 }
 
 // here we are testing out our own moore/ucb intersection
-twa_word_ptr test_moore_kucb_intersection(twa_graph_ptr moore_machine, twa_graph_ptr ucb, unsigned k, twa_graph_ptr kucb) {
+twa_word_ptr test_moore_kucb_intersection(twa_graph_ptr moore_machine, twa_graph_ptr ucb, unsigned k, twa_graph_ptr kucb, bdd_dict_ptr dict) {
   // moore_kucb_intersection
   cout << "\n\n\n\n\n";
   
@@ -112,10 +112,10 @@ twa_word_ptr test_moore_kucb_intersection(twa_graph_ptr moore_machine, twa_graph
   cout << "performing moore kucb intersection (spot) ..." << endl;
   auto counter = moore_machine->intersecting_word(kucb);
   cout << "done. " << "counterexample found: " << ((counter == nullptr) ? "no" : "yes") << endl;
-
   
   // cout << x << endl;
 
+  /*
   if (counter == nullptr) {
     cout << "NO counterexample found by spot" << endl;
   } else {
@@ -125,9 +125,14 @@ twa_word_ptr test_moore_kucb_intersection(twa_graph_ptr moore_machine, twa_graph
     page_finish();
     exit(1);
   }
+  */
 
   if ((counter == nullptr && we_found_counter) || (counter != nullptr && !we_found_counter)) {
     cout << "we got a different result to spot" << endl;
+
+    if (counter != nullptr)
+      cout << "spot's counterexample: " << force_string(*counter) << endl;
+
     page_finish();
     exit(1);
   }
@@ -137,7 +142,7 @@ twa_word_ptr test_moore_kucb_intersection(twa_graph_ptr moore_machine, twa_graph
     cout << "well we recognised the existence of a counterexample, although we currently have no way to actually extract it." << endl;
   }
 
-  cout << "\n\n\n\n\n";
+  // cout << "\n\n\n\n\n";
   // exit(0);
   return counter;
 }

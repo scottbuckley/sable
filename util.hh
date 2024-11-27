@@ -120,11 +120,45 @@ struct span_iter {
     iter_state(unsigned index, const std::vector<T> * collection) : index{index}, collection{collection} {}
     bool operator!=( const iter_state &other ) const noexcept { return index != other.index; }
     iter_state operator++() noexcept { ++index; return *this; }
-    T operator*() noexcept { return (*collection)[index]; }
+    const T & operator*() noexcept { return (*collection)[index]; }
   };
 
   iter_state begin() const { return iter_state(start, collection); }
   iter_state end()   const { return iter_state(start + count, nullptr); }
+};
+
+template <typename T>
+struct span_filter_iter {
+  const std::vector<T> * collection;
+  const unsigned start;
+  const unsigned count;
+  function<bool(T)> filter;
+
+  span_filter_iter(const std::vector<T> * collection, unsigned start, unsigned count, function<bool(T)> filter)
+    : collection{collection}, start{start}, count{count}, filter{filter} {}
+
+  struct iter_state {
+    const std::vector<T> * collection;
+    const unsigned end_index;
+    unsigned index = 0;
+    function<bool(T)> filter;
+    iter_state(unsigned index, const unsigned & end_index, const std::vector<T> * collection, function<bool(T)> filter) : index{index}, end_index{end_index}, collection{collection}, filter{filter} {}
+    bool operator!=( const iter_state &other ) const noexcept { return index != other.index; }
+    iter_state operator++() noexcept { ++index; next_passing(); return *this; }
+    T operator*() noexcept { return (*collection)[index]; }
+
+    void next_passing() {
+      while ( index != end_index && !filter((*collection)[index]))
+        ++index;
+    }
+  };
+
+  iter_state begin() const {
+    auto begin = iter_state(start, start+count, collection, filter);
+    begin.next_passing();
+    return begin;
+  }
+  iter_state end()   const { return iter_state(start+count, start+count, nullptr, filter); }
 };
 
 struct range_iter {

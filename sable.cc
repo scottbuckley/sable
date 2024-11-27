@@ -58,7 +58,28 @@ int main(int ac, char* av[]) {
   // vector<string> input_aps = {"request0", "request1", "request2"};
   
   cout << "beginning process" << endl;
-  IF_PAGE_ANYTHING page_start ("Sable Debug");
+  IF_PAGE_ANYTHING {
+    IF_PAGE_TABLE {
+      page_start([](){
+        page_table_start_table();
+        page_table_cell("File", true);
+        page_table_cell("Solved K", true);
+        page_table_cell("Iterations", true);
+        if (opt.count_det)
+          page_table_cell("Det State #", true);
+        page_table_cell("Our State #", true);
+        if (opt.count_det)
+          page_table_cell("Det count time", true);
+        page_table_cell("LSafe Time", true);
+      });
+      page_table_start_row();
+      string tlsf_filename = opt.tlsf_path.substr(opt.tlsf_path.find_last_of("/") + 1);
+      page_table_cell(tlsf_filename);
+    } else {
+      page_start();
+      page_heading("Sable Debug");
+    }
+  }
 
   formula ltl = parse_formula(ltlstr);
 
@@ -74,7 +95,24 @@ int main(int ac, char* av[]) {
     LSafe(ltl, input_aps, timers);
   lsafe_timer->stop()->report();
 
+
+  IF_PAGE_TABLE {
+    // times
+    string lsafe_time = lsafe_timer->smart_duration_string();
+    if (opt.count_det) {
+      auto det_timer = timers.getTimer("Determinisation State Count");
+      page_table_cell(det_timer->smart_duration_string());
+      long long adjusted_time = lsafe_timer->get_nanoseconds() - det_timer->get_nanoseconds();
+      lsafe_time = Stopwatch::smart_duration(adjusted_time);
+    }
+    page_table_cell(lsafe_time);
+    page_table_end_row();
+  }
+
+
   IF_PAGE_TIMER timers.draw_page_donut("Timers for total execution");
+  // timers.draw_page_donut("Timers for total execution");
+
   
   IF_PAGE_ANYTHING page_finish();
   return 0;

@@ -163,7 +163,8 @@ void ebsc_test() {
   auto bsc_timer = timers.make_timer("BSC Operations");
   auto bsdd_timer = timers.make_timer("BSDD Operations");
   auto bsc_taut_timer = timers.make_timer("BSC Truth Checks");
-  page_start ("eBSC Tests Debug");
+  page_start();
+  page_heading("eBSC Tests Debug");
 
   auto cumulative_disj_test = [&](){
     // cout << " --- cumul --- " << endl;

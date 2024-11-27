@@ -1,6 +1,7 @@
 #pragma once
 #include "common.hh"
 #include "extras.cc"
+#include "substrategy_simulation.cc"
 #include <spot/parseaut/public.hh>
 #include <spot/twaalgos/game.hh>
 #include <spot/misc/escape.hh>
@@ -554,9 +555,13 @@ std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, const ap_info & ap
   // #endif
 
   if (winning) {
-    #if CONFIG_SOLVE_GAME_DETERMINISTIC
-      machine = minimise_mealy_machine_pre_merge(machine, apinfo);
-    #endif
+    const unsigned first_state_count = machine->num_states();
+    machine = find_smaller_simulation(machine, apinfo);
+    const unsigned minimised_state_count = machine->num_states();
+
+    IF_PAGE_DETAILS {
+      page_text("Most-permissive strat had " + to_string(first_state_count) + " states, which we minimised to " + to_string(minimised_state_count));
+    }
 
     machine->merge_edges(); // optional
 
@@ -567,13 +572,15 @@ std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, const ap_info & ap
       exit(1);
     }
   } else {
-    #if CONFIG_SOLVE_GAME_DETERMINISTIC
-      machine = minimise_moore_machine_pre_merge(machine, apinfo);
-    #endif
+    const unsigned first_state_count = machine->num_states();
+    machine = find_smaller_simulation_moore(machine, apinfo);
+    const unsigned minimised_state_count = machine->num_states();
 
-    // page_graph(machine, "pre merge");
+    IF_PAGE_DETAILS {
+      page_text("Most-permissive strat had " + to_string(first_state_count) + " states, which we minimised to " + to_string(minimised_state_count));
+    }
+
     machine->merge_edges(); // optional
-    // page_graph(machine, "post merge");
 
     if (!is_valid_moore_machine(machine, apinfo)) {
       cout << "OH NO it's not a valid moore you did something wrong :(";

@@ -159,6 +159,10 @@ public:
     pathy |= mask;
   }
 
+  bool is_fully_defined(const unsigned & mask) const {
+    return ((pathy & mask) == mask);
+  }
+
   void check_validity() const {
     if (pathy == 0) {
       if (truth == 0) return;

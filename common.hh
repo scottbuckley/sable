@@ -80,7 +80,7 @@ inline int bdd_compat(const bdd &l, const bdd &r) noexcept {
 struct store_unsigned {
   unsigned val = 0;
   store_unsigned(unsigned val) : val{val} {};
-  store_unsigned * copy() {
+  store_unsigned * copy() const {
     return new store_unsigned(val);
   }
 };

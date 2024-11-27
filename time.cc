@@ -102,9 +102,7 @@ public:
     return to_string(ns);
   }
 
-  static string smart_duration(nanoseconds e) {
-    // cout << e.count() << endl;
-    long long bigcount = e.count();
+  static string smart_duration(long long bigcount) {
     if (bigcount < 1000) return to_string(bigcount) + " ns";
     bigcount /= 1000;
     if (bigcount < 1000) return to_string(bigcount) + " us";
@@ -112,6 +110,10 @@ public:
     if (bigcount < 1000) return to_string(bigcount) + " ms";
     bigcount /= 1000;
     return to_string(bigcount) + " sec";
+  }
+
+  static string smart_duration(nanoseconds e) {
+    return smart_duration(e.count());
   }
 
   string smart_duration_string() {

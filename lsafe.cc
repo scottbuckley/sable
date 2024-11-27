@@ -8,7 +8,8 @@
 #include <spot/twaalgos/complete.hh>
 #include "time.cc"
 #include "extras.cc"
-#include "select_substrategy.cc"
+// #include "select_substrategy.cc"
+#include "substrategy_simulation.cc"
 
 #define MAX_K 10
 
@@ -256,12 +257,15 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
   auto global_closing_timer    = timers.make_timer("Table closing");
   auto k_expansion_timer       = timers.make_timer("K Expansion");
   auto global_inclusion_timer  = timers.make_timer("Inclusion Checks");
-  auto global_solving_timer    = timers.make_timer("Safety Game Solving");
+  auto global_solving_timer    = timers.make_timer("Safety Game Solving  (incl minimisation)");
+  auto global_det_count_timer  = timers.make_timer("Determinisation State Count");
   // auto global_kucb_compl_timer = timers.make_timer("KUCB Complementing");
   auto init_timer              = timers.make_timer("Initialisation");
   auto global_walk_timer       = timers.make_timer("Walking");
   auto global_walk_building_timer       = timers.make_timer("Building Walkers");
   global_walk_timer->set_subsumption_parent(global_closing_timer);
+
+  auto test_timer = Stopwatch("testing");
 
   // Set up lots of required bits and pieces (and time it)
   init_timer->start();
@@ -304,6 +308,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     auto inclusion_timerA   = local_timers.make_timer("Inclusion Check Instance (Moore intersects kUCB complement)", global_inclusion_timer);
     auto inclusion_timerB   = local_timers.make_timer("Inclusion Check Instance (Sanity check)", global_inclusion_timer);
     auto inclusion_timerC   = local_timers.make_timer("Inclusion Check Instance (Moore intersects kUCB)", global_inclusion_timer);
+    auto det_count_timer    = local_timers.make_timer("Determinisation State Count", global_det_count_timer);
     auto solving_timer      = local_timers.make_timer("Safety Game Solving Instance", global_solving_timer);
     // auto kucb_compl_timer = local_timers.make_timer("KUCB Complementing Instance", global_kucb_compl_timer);
     auto walk_timer         = local_timers.make_timer("Walking Instance", global_walk_timer);
@@ -323,7 +328,13 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     });
 
     // find state count for determinisation of UCB with bound K
-    
+    unsigned determinisation_count = 0;
+    if (opt.count_det) {
+      det_count_timer->start();
+        determinisation_count = count_deterministisation_states(cobuchi, k, apinfo);
+      det_count_timer->stop();
+      cout << "  determinisation state count: " << determinisation_count << endl;
+    }
 
     // expand the UCB into a kUCB
     k_expansion_timer->start();
@@ -347,6 +358,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     IF_PAGE_DETAILS {
       if (k == 0) page_heading("Starting with K = " + to_string(k));
       else    page_heading("Incrementing K to " + to_string(k));
+      page_text(to_string(determinisation_count), "Determinisation state count");
       page_graph(kucb, "Expanded K-CoBuchi for K="+to_string(k));
     }
 
@@ -367,9 +379,11 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
       (C) a btree that stores an index into B.
     */
     
+    test_timer.start();
     shared_ptr<PrefixTree> ptree = make_shared<PrefixTree>(-1, apinfo.letter_count, nullptr, 0); // tree representation of prefixes
     ptree->ucb_walk_position = walk->get_position(); // the initial walk position
     ptree->already_failed = !init_state_accepted;
+    test_timer.stop();
 
     // i think this is now taken care of by shared_ptr mechanisms.
     // auto x = RunOnReturn([&ptree](){
@@ -589,7 +603,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
 
 
     bdd most_recent_counterexample_first_letter = bdd_false();
-    const unsigned max_iterations = 2000;
+    const unsigned max_iterations = 500;
     for (unsigned i=1; i<=max_iterations; i++) {
       if (i==max_iterations) {
         IF_PAGE_DETAILS {
@@ -686,11 +700,22 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
             IF_PAGE_DETAILS {
               page_text("Also passed the Buchi test.");
             }
+            IF_PAGE_TABLE {
+              //table format:
+              // name, k_solved, det_count, final_count, times
+              page_table_cell(to_string(k));
+              page_table_cell(to_string(i));
+              if (opt.count_det)
+                page_table_cell(to_string(determinisation_count));
+              page_table_cell(to_string(machine->num_states()));
+              // page_table_cell(timers.getTimer("LSafe Total")->smart_duration_string());
+            }
             cout << "sanity check passed" << endl;
             // debug_check_hardcoded_solution(H, apmap);
             // here is where we have a final (mealy) solution.
             // i will try to re-select a smaller mealy machine from the most-permissive strategy here.
             // debug_find_smaller_substrategy(H, apinfo);
+            // find_smaller_simulation(H, apinfo);
           }
           return make_tuple(true, machine);
         }
@@ -707,18 +732,28 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
         // gives us a positive counterexample.
         inclusion_timerC->start();
           // twa_word_ptr counterexample = machine->intersecting_word(kucb);
-          twa_word_ptr counterexample = test_moore_kucb_intersection(machine, cobuchi, k, kucb);  //machine->intersecting_word(kucb);
-        inclusion_timerC->stop()->report();
+          twa_word_ptr counterexample = test_moore_kucb_intersection(machine, cobuchi, k, kucb, dict);  //machine->intersecting_word(kucb);
+        inclusion_timerC->stop();
         if (word_not_empty(counterexample)) {
-          throw std::runtime_error("moore counterexample");
-          fully_specify_word(counterexample, apinfo);
+          IF_PAGE_DETAILS {
+            string orig_counterexample_string = force_string(*counterexample);
+            if (fully_specify_word(counterexample, apinfo))
+              page_text(orig_counterexample_string, "Original (symbolic) counterexample");
+            page_text(force_string(*counterexample), "Counterexample");
+          } else {
+            fully_specify_word(counterexample, apinfo);
+          }
+
+          // different kind of counterexample: it's something that fails in the 
+          // hypothesis but succeeds in the kUCB.
           finite_word_ptr finite_counterexample = find_shortest_failing_prefix(H, counterexample);
 
           IF_PAGE_DETAILS {
-            page_text(force_string(*counterexample), "Counterexample");
             page_text(prefix_to_string(dict, finite_counterexample), "Shortest finite counterexample");
             page_text("Adding all suffixes of the counterexample to S.");
           }
+
+          // throw std::runtime_error("moore counterexample");
 
           while (finite_counterexample->size()>1) {
             finite_counterexample->pop_front();
@@ -748,6 +783,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     auto [realisable, machine] = LSafeForK(k);
     if (realisable) {
       cout << "we have a solution" << endl;
+      test_timer.report(" ---- ");
       IF_PAGE_BASIC {
         page_text("We have a solution for K = " + to_string(k) + ".");
         page_graph(machine, "Solution mealy  machine");

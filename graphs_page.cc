@@ -36,9 +36,9 @@ void write_page_header() {
   page << "<script src=\"render.js\"></script>";
 }
 
-void page_start(string heading = "") {
+void page_start(function<void()> run_if_new_file = [](){}) {
   const string full_report_path = "page/" + opt.report_filename;
-
+  
   ifstream page_test;
   page_test.open(full_report_path);
   if (page_test.good() && opt.report_append) {
@@ -49,15 +49,21 @@ void page_start(string heading = "") {
     // we are starting a new file, possibly overwriting what was already there.
     page.open(full_report_path);
     write_page_header();
+    run_if_new_file();
   }
   
-  if (heading.length() > 0)
-    page << "<h1>" << heading << "</h1>" << endl;
+  // if (heading.length() > 0)
+  //   page << "<h1>" << heading << "</h1>" << endl;
 }
 
+// void page_start(string heading) {
+//   page_start([heading](){page << "<h1>" << heading << "</h1>" << endl;});
+// }
+
 void page_finish() {
-  if (!opt.report_append)
+  if (!opt.report_append) {
     page << "</body></html>" << endl;
+  }
   page.close();
 }
 
@@ -126,4 +132,44 @@ void page_code(string description, string code) {
   page << code;
   page << "</code>" << "</pre>";
   page << "</div>";
+}
+
+/* tables */
+bool row_in_progress = false;
+
+void page_table_start_row();
+void page_table_end_row();
+void page_table_start_table();
+void page_table_end_table();
+
+void page_table_cell(string cell_contents, bool bold = false) {
+  if (!row_in_progress) page_table_start_row();
+  if (bold)
+    page << "<td><b>" << cell_contents << "</b></td>" << endl;
+  else
+    page << "<td>" << cell_contents << "</td>" << endl;
+}
+
+
+void page_table_start_table() {
+  row_in_progress = false;
+  page << "<table>";
+}
+
+void page_table_start_row() {
+  if (row_in_progress) page_table_end_row();
+
+  row_in_progress = true;
+
+  page << "<tr>" << endl;
+}
+
+void page_table_end_table() {
+  if (row_in_progress) page_table_end_row();
+  page << "</table>" << endl;
+}
+
+void page_table_end_row() {
+  page << "</tr>" << endl;
+  row_in_progress = false;
 }
