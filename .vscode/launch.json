@@ -31,8 +31,8 @@
         "request": "launch",
         "cwd": "${fileDirname}",
         "program": "sable",
-        // "args": ["--input-tlsf=../benchmarks_ulb/arbiter/parametric/simple_arbiter_4.tlsf",
-        "args": ["--input-tlsf=../benchmarks_ulb/strix_detector_2.tlsf",
+        "args": ["--input-tlsf=../benchmarks_ulb/strix_detector_3.tlsf",
+        // "args": ["--input-tlsf=../benchmarks_ulb/strix_detector_2.tlsf",
                  "-r2",
                  "--report-time=2"
                  ]

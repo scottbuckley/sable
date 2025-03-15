@@ -77,6 +77,15 @@ string to_string(vector<T> v) {
 }
 
 template<typename T>
+string force_string_list(std::list<T> v) {
+    stringstream out;
+    for (const auto & x : v) {
+      out << x << " ";
+    }
+    return out.str();
+}
+
+template<typename T>
 string force_string(T v) {
     stringstream out;
     out << v;

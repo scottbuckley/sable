@@ -281,6 +281,39 @@ twa_graph_ptr find_smaller_simulation(const twa_graph_ptr & strat, const ap_info
   return new_twa_graph;
 }
 
+/*
+
+  we have SIM
+  we have ALPHA
+
+  mealy:
+  for each state:
+    for each input:
+      - if there is an output whose ALPHA is already in the graph, choose that.
+      - otherwise, if there is an output that points to a destination simulated
+        by an existing state, choose that.
+      - otherwise, just pick the first one.
+  
+  moore:
+    for each state:
+      - we already have a list of legal inputs.
+      - measure the COST of each legal input.
+      - choose the input with the lowest COST.
+
+  COST of an input:
+    the sum of F for each destination that input has an edge to.
+    F = 0, if the destination's ALPHA is in the graph.
+    F = 0, if the destination is simulated by a state in the graph.
+    F = 1, if we need to create a new state for this destination.
+            (and also temporarily record the new state's ALPHA as part of the graph)
+
+    ** NOTE: the sink state must be treated differently: we do not simplify the
+       sink state.
+
+
+*/
+
+
 mutable_BSG compute_strat_moore(const BSG & g, const std::vector<boost::dynamic_bitset<>> & sim, const std::vector<unsigned> & alpha, unsigned moore_sink_idx, const ap_info & apinfo) {
   mutable_BSG new_g = mutable_BSG();
   std::vector<unsigned> new_state_to_dominant;

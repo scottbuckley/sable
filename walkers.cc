@@ -57,7 +57,7 @@ private:
   unsigned num_states;
   unsigned num_letters;
   stateset_ptr current_stateset;
-  accepting_state_cache asc;
+  boost::dynamic_bitset<> asc;
 
   // these are used to cache the statesets stepped to on individual letters
   // from individual states.
@@ -369,6 +369,10 @@ public:
     cout << "current states: "; print_vector(cur_states);
     
     return (has_failed = try_step(letter));
+  }
+
+  void debug_dump() {
+    cout << "current states: "; print_vector(cur_states);
   }
 
   bool step_and_check_failed(const bdd & letter) {

@@ -63,13 +63,13 @@ int main(int ac, char* av[]) {
       page_start([](){
         page_table_start_table();
         page_table_cell("File", true);
-        page_table_cell("Solved K", true);
-        page_table_cell("Iterations", true);
+        page_table_cell("K", true);
+        page_table_cell("Iters", true);
         if (opt.count_det)
           page_table_cell("Det State #", true);
-        page_table_cell("Our State #", true);
+        page_table_cell("Mealy State #", true);
         if (opt.count_det)
-          page_table_cell("Det count time", true);
+          page_table_cell("Det Count time", true);
         page_table_cell("LSafe Time", true);
       });
       page_table_start_row();

@@ -109,6 +109,17 @@ bool fully_specify_word(twa_word_ptr word, const ap_info & apinfo) {
   return change_made;
 }
 
+bool fully_specify_finite_word(finite_word_ptr word, const ap_info & apinfo) {
+  bool change_made = false;
+  for (bdd & letter : *word) {
+    bdd newletter = complete_letter(letter, apinfo);
+    if (newletter != letter) change_made = true;
+    letter = newletter;
+  }
+
+  return change_made;
+}
+
 // this assumes that the given counterexample is in fact a counterexample, so it will
 // eventually fail when executing on the machine "g"
 finite_word_ptr find_shortest_failing_prefix(twa_graph_ptr g, twa_word_ptr counterexample) {
@@ -122,6 +133,52 @@ finite_word_ptr find_shortest_failing_prefix(twa_graph_ptr g, twa_word_ptr count
     for (bdd & letter : counterexample->cycle) {
       out->push_back(letter);
       if (walker->step_and_check_failed(letter)) return out;
+    }
+  }
+  throw std::runtime_error("we didnt' find a counterexample after " + to_string(longest_counterexample) + " steps. something wrong here?");
+}
+
+// this does not totally assume that the given counterexample is a real counterexample,
+// but will throw an error if it is not.
+finite_word_ptr find_shortest_moore_counterexample(const twa_graph_ptr & g, const twa_graph_ptr & kucb, twa_word_ptr counterexample) {
+  shared_ptr<UCB_BDD_Walker> walker_g = make_shared<UCB_BDD_Walker>(g);
+  shared_ptr<UCB_BDD_Walker> walker_kucb = make_shared<UCB_BDD_Walker>(kucb);
+  finite_word_ptr out = make_finite_word();
+  for (bdd & letter : counterexample->prefix) {
+    out->push_back(letter);
+    const bool failed_g    = walker_g->step_and_check_failed(letter);
+    const bool failed_kucb = walker_kucb->step_and_check_failed(letter);
+    // this counterexample should be something that FAILS the hypothesis, but is still safe in the kucb.
+    // if this fails the kucb, throw an error.
+    // cout << "g walk state: " << endl;
+    // walker_g->debug_dump();
+    // cout << "kucb walk state: " << endl;
+    // walker_kucb->debug_dump();
+
+    // if (!failed_g && !failed_kucb) cout << "step taken, both are fine" << endl;
+    // if (!failed_g && failed_kucb) cout << "step taken, g is still ok but kucb failed" << endl;
+    // if (failed_g && !failed_kucb) cout << "step taken, g failed but kucb is still ok" << endl;
+    // if (failed_g && failed_kucb) cout << "step taken, both failed at the same time (this is weird right?)" << endl;
+    if (failed_kucb) throw std::runtime_error("this shouldn't happen");
+    if (failed_g) return out;
+  }
+  for (unsigned i=0; i<longest_counterexample; i++) {
+    for (bdd & letter : counterexample->cycle) {
+      out->push_back(letter);
+      const bool failed_g    = walker_g->step_and_check_failed(letter);
+      const bool failed_kucb = walker_kucb->step_and_check_failed(letter);
+      // this counterexample should be something that FAILS the hypothesis, but is still safe in the kucb.
+      // if this fails the kucb, throw an error.
+      // cout << "g walk state: " << endl;
+      // walker_g->debug_dump();
+      // cout << "kucb walk state: " << endl;
+      // walker_kucb->debug_dump();
+      // if (!failed_g && !failed_kucb) cout << "step taken, both are fine" << endl;
+      // if (!failed_g && failed_kucb) cout << "step taken, g is still ok but kucb failed" << endl;
+      // if (failed_g && !failed_kucb) cout << "step taken, g failed but kucb is still ok" << endl;
+      // if (failed_g && failed_kucb) cout << "step taken, both failed at the same time (this is weird right?)" << endl;
+      if (failed_kucb) throw std::runtime_error("this shouldn't happen");
+      if (failed_g) return out;
     }
   }
   throw std::runtime_error("we didnt' find a counterexample after " + to_string(longest_counterexample) + " steps. something wrong here?");
@@ -331,7 +388,8 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
     unsigned determinisation_count = 0;
     if (opt.count_det) {
       det_count_timer->start();
-        determinisation_count = count_deterministisation_states(cobuchi, k, apinfo);
+        cout << "counting determinisation states ..." << endl;
+        determinisation_count = count_determinisation_states_with_cache(cobuchi, k, apinfo, opt.tlsf_path);
       det_count_timer->stop();
       cout << "  determinisation state count: " << determinisation_count << endl;
     }
@@ -734,7 +792,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
           // twa_word_ptr counterexample = machine->intersecting_word(kucb);
           twa_word_ptr counterexample = test_moore_kucb_intersection(machine, cobuchi, k, kucb, dict);  //machine->intersecting_word(kucb);
         inclusion_timerC->stop();
-        if (word_not_empty(counterexample)) {
+        if (counterexample != nullptr) {
           IF_PAGE_DETAILS {
             string orig_counterexample_string = force_string(*counterexample);
             if (fully_specify_word(counterexample, apinfo))
@@ -746,7 +804,16 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
 
           // different kind of counterexample: it's something that fails in the 
           // hypothesis but succeeds in the kUCB.
-          finite_word_ptr finite_counterexample = find_shortest_failing_prefix(H, counterexample);
+          // twa_graph_ptr H_copy = make_shared<twa_graph>(*H);
+          // twa_graph_ptr moore_copy = make_shared<twa_graph>(*machine);
+          // H_copy->merge_edges();
+          // moore_copy->merge_edges();
+          // page_graph(H_copy, "merged hypothesis");
+          // page_graph(moore_copy, "merged moore");
+
+          finite_word_ptr finite_counterexample = find_shortest_moore_counterexample(H, kucb, counterexample);
+          // finite_word_ptr finite_counterexample = find_shortest_failing_prefix(H, counterexample);
+          // auto & finite_counterexample = counterexample;
 
           IF_PAGE_DETAILS {
             page_text(prefix_to_string(dict, finite_counterexample), "Shortest finite counterexample");
@@ -786,7 +853,7 @@ void LSafe(formula ltl, std::vector<string> input_aps, StopwatchSet & timers) {
       test_timer.report(" ---- ");
       IF_PAGE_BASIC {
         page_text("We have a solution for K = " + to_string(k) + ".");
-        page_graph(machine, "Solution mealy  machine");
+        page_graph(machine, "Solution mealy machine");
       }
       return;
     } else {

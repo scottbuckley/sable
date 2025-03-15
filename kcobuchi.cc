@@ -67,19 +67,7 @@ bool is_accepting_state(twa_graph_ptr g, const unsigned state) {
 };
 
 
-typedef boost::dynamic_bitset<> accepting_state_cache;
-accepting_state_cache make_accepting_state_cache(twa_graph_ptr g) {
-  const unsigned size = g->num_states();
-  accepting_state_cache c(size, false);
-  for (unsigned i=0; i<size; ++i) {
-    if (is_accepting_state(g, i)) {
-      c.set(i);
-    }
-  }
-  return c;
-}
-
-bool is_accepting_state(const unsigned state, accepting_state_cache & cache) {
+bool is_accepting_state(const unsigned state, boost::dynamic_bitset<> & cache) {
   return cache[state];
 };
 
@@ -92,6 +80,29 @@ bool is_sink(twa_graph_ptr g, unsigned state) {
       if (d != state) return false;
   return true;
 }
+
+boost::dynamic_bitset<> make_accepting_state_cache(twa_graph_ptr g) {
+  const unsigned size = g->num_states();
+  boost::dynamic_bitset<> c(size, false);
+  for (unsigned i=0; i<size; ++i) {
+    if (is_accepting_state(g, i)) {
+      c.set(i);
+    }
+  }
+  return c;
+}
+
+boost::dynamic_bitset<> make_sink_state_cache(twa_graph_ptr g) {
+  const unsigned size = g->num_states();
+  boost::dynamic_bitset<> c(size, false);
+  for (unsigned i=0; i<size; ++i) {
+    if (is_sink(g, i)) {
+      c.set(i);
+    }
+  }
+  return c;
+}
+
 
 void print_expansion_key(state_cache dict) {
   //TODO: sort the output?
@@ -133,7 +144,7 @@ twa_graph_ptr kcobuchi_expand(twa_graph_ptr input, unsigned k) {
 
   unsigned fin_set = acc.fin_one();
 
-  accepting_state_cache asc = make_accepting_state_cache(input);
+  boost::dynamic_bitset<> asc = make_accepting_state_cache(input);
 
   // create the output graph
   twa_graph_ptr output = make_twa_graph(input->get_dict());

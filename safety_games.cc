@@ -406,7 +406,7 @@ twa_graph_ptr get_strategy_machine(twa_graph_ptr input) {
 
 
 
-twa_graph_ptr minimise_mealy_machine_pre_merge(twa_graph_ptr g, const ap_info & apinfo, const bool specialise_sinks = true) {
+twa_graph_ptr minimise_mealy_machine_pre_merge(twa_graph_ptr g, const ap_info & apinfo) {
 
   twa_graph_ptr output = make_twa_graph(g->get_dict());
   std::unordered_map<unsigned, unsigned> statemap;
@@ -448,7 +448,7 @@ twa_graph_ptr minimise_mealy_machine_pre_merge(twa_graph_ptr g, const ap_info & 
   return output;
 }
 
-twa_graph_ptr minimise_moore_machine_pre_merge(twa_graph_ptr g, const ap_info & apinfo, const bool specialise_sinks = true) {
+twa_graph_ptr minimise_moore_machine_pre_merge(twa_graph_ptr g, const ap_info & apinfo) {
 
   twa_graph_ptr output = make_twa_graph(g->get_dict());
   std::unordered_map<unsigned, unsigned> statemap;
@@ -573,14 +573,15 @@ std::tuple<bool, twa_graph_ptr> solve_safety(twa_graph_ptr g, const ap_info & ap
     }
   } else {
     const unsigned first_state_count = machine->num_states();
-    machine = find_smaller_simulation_moore(machine, apinfo);
+    // machine = find_smaller_simulation_moore(machine, apinfo);
+    machine = minimise_moore_machine_pre_merge(machine, apinfo);
     const unsigned minimised_state_count = machine->num_states();
 
     IF_PAGE_DETAILS {
       page_text("Most-permissive strat had " + to_string(first_state_count) + " states, which we minimised to " + to_string(minimised_state_count));
     }
 
-    machine->merge_edges(); // optional
+    // machine->merge_edges(); // optional
 
     if (!is_valid_moore_machine(machine, apinfo)) {
       cout << "OH NO it's not a valid moore you did something wrong :(";

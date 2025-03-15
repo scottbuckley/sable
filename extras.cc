@@ -4,9 +4,10 @@
 #include "kucb_intersection.cc"
 #include <string>
 #include <spot/tl/relabel.hh>
+#include "words.cc"
 
 bdd get_dead_letters_bdd(twa_graph_ptr g) {
-  accepting_state_cache asc = make_accepting_state_cache(g);
+  auto asc = make_accepting_state_cache(g);
   bdd dead_letters = bddtrue;
   for (unsigned i=0; i<g->num_states(); ++i) {
     for (auto & e : g->out(i)) {
@@ -94,14 +95,29 @@ TWAEdgeIterator * get_edge_iterator(twa_graph_ptr g) {
   return edge_iter;
 }
 
+/*
+
+which benchmarks will i look at next?
+
+ltl2dba
+ltl2dpa
+
+amba_case_study.tlsf
+
+
+idea: hard-coded examples? add them to the initial hypothesis
+
+
+*/
+
 // here we are testing out our own moore/ucb intersection
-twa_word_ptr test_moore_kucb_intersection(twa_graph_ptr moore_machine, twa_graph_ptr ucb, unsigned k, twa_graph_ptr kucb, bdd_dict_ptr dict) {
+twa_word_ptr test_moore_kucb_intersection(twa_graph_ptr moore_machine, twa_graph_ptr ucb, unsigned k, const twa_graph_ptr & kucb, bdd_dict_ptr dict) {
   // moore_kucb_intersection
-  cout << "\n\n\n\n\n";
+  // cout << "\n\n\n\n\n";
   
-  cout << "performing moore kucb intersection (ours) ..." << endl;
-  bool we_found_counter = moore_kucb_intersection(moore_machine, ucb, k);
-  cout << "done." << endl;
+  // cout << "performing moore kucb intersection (ours) ..." << endl;
+  // bool we_found_counter = moore_kucb_intersection(moore_machine, ucb, k);
+  // cout << "done." << endl;
 
   #if !CONFIG_REDUNDANT_CHECK_MOORE_INTERSECTION_AGAINST_SPOT
     if (we_found_counter == false) {
@@ -109,42 +125,51 @@ twa_word_ptr test_moore_kucb_intersection(twa_graph_ptr moore_machine, twa_graph
     }
   #endif
 
-  cout << "performing moore kucb intersection (spot) ..." << endl;
-  auto counter = moore_machine->intersecting_word(kucb);
-  cout << "done. " << "counterexample found: " << ((counter == nullptr) ? "no" : "yes") << endl;
+  // cout << "performing moore kucb intersection (spot) ..." << endl;
+  // auto counter = moore_machine->intersecting_word(kucb);
+  // cout << "done. " << "counterexample found: " << ((counter == nullptr) ? "no" : "yes") << endl;
   
   // cout << x << endl;
 
-  /*
-  if (counter == nullptr) {
-    cout << "NO counterexample found by spot" << endl;
-  } else {
-    cout << "counterexample found by spot" << endl;
-    throw std::runtime_error("we need to figure out how to extract our own fucken counterexample here");
-    cout << "we also found a counterexample! but how do we extract it????" << endl;
-    page_finish();
-    exit(1);
-  }
-  */
+  auto our_counter = moore_kucb_intersection(moore_machine, ucb, k);
+  // auto our_counter = moore_kucb_intersection(moore_machine, kucb, 0);
+  
+  // if (counter == nullptr) {
+  //   cout << "NO counterexample found by spot" << endl;
+  // } else {
+  //   cout << "counterexample found by spot" << endl;
+  //   if (our_counter != nullptr) {
+  //     cout << "we can compare counterexamples" << endl;
+  //     cout << endl << "spot's:" << endl;
+  //     cout << *counter << endl;
+  //     cout << endl << "our's:" << endl;
+  //     cout << *our_counter << endl;
+  //     cout << endl << endl;
+  //   }
+  // }
+  
 
-  if ((counter == nullptr && we_found_counter) || (counter != nullptr && !we_found_counter)) {
-    cout << "we got a different result to spot" << endl;
+  return our_counter;
 
-    if (counter != nullptr)
-      cout << "spot's counterexample: " << force_string(*counter) << endl;
+  // if ((counter == nullptr && we_found_counter) || (counter != nullptr && !we_found_counter)) {
+  // if ((counter != nullptr && !we_found_counter)) { // this only complains if spot found a counterexample but we didn't
+  //   cout << "we got a different result to spot" << endl;
 
-    page_finish();
-    exit(1);
-  }
+  //   if (counter != nullptr)
+  //     cout << "spot's counterexample: " << force_string(*counter) << endl;
+
+  //   page_finish();
+  //   exit(1);
+  // }
   // cout << print_prefix(cout, moore_machine->get_dict(), inter) << endl;
 
-  if (counter != nullptr) {
-    cout << "well we recognised the existence of a counterexample, although we currently have no way to actually extract it." << endl;
-  }
+  // if (counter != nullptr) {
+  //   cout << "well we recognised the existence of a counterexample, although we currently have no way to actually extract it." << endl;
+  // }
 
   // cout << "\n\n\n\n\n";
   // exit(0);
-  return counter;
+  // return counter;
 }
 
 // assumes no universal edges
@@ -173,7 +198,7 @@ bool is_valid_moore_machine(twa_graph_ptr g, const ap_info & apinfo) {
     }
     if (common_input == bddfalse) {
       // there is no common input
-      cout << "there's no common input" << endl;
+      cout << "there's no common input on state " << s << endl;
       return false;
     }
     bdd output_covered = bddfalse;
