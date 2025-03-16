@@ -2,4 +2,8 @@
 *.png
 *.dot
 test
+sable
 .DS_Store
+*.ins
+*.ltl
+*.detcount

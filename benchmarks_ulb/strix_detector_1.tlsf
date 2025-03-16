@@ -1,0 +1,26 @@
+INFO {
+  TITLE:       "Detector"
+  DESCRIPTION: "n = 1"
+  SEMANTICS:   Mealy
+  TARGET:      Mealy
+}
+
+GLOBAL {
+  
+}
+
+MAIN {
+
+  INPUTS {
+    r0;
+  } 
+
+  OUTPUTS {
+    g; // grant signal
+  }
+
+  GUARANTEES {
+    ( (G F r0) ) <-> G F g
+  }
+  
+}
