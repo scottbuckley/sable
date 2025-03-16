@@ -19,3 +19,11 @@ On unix, it seems to compile with the following:
 ```
 g++ -std=c++17 sable.cc -lspot -lboost_program_options -lbddx -o sable -Wl,-rpath=/usr/local/lib
 ```
+
+Before it will be able to read TLSF files, you will need to install syfco, and point the `make_ltl.sh` to where it is installed. For me on OSX and Ubuntu I didn't have to change `make_ltl.sh`, but you will need to if `syfco` doesn't install in the same place as it did for me.
+```
+# not inside the sable directory
+git clone https://github.com/reactive-systems/syfco.git
+cd syfco
+stack install
+```

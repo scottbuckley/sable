@@ -112,10 +112,12 @@ public:
         bsc.truth |= var_mask;
         b = high;
       } else {
-        // neither are false.
-        // here i want to say that neither of the children can be bddtrue, but i'm not sure.
-        // i'll assert it for now and figure out what's wrong if the assertion is wrong.
-        assert(high != bddtrue); assert (low != bddtrue);
+        // i used to assert that neither high or low could be true,
+        // but this was incorrect. i don't remember why i made that
+        // assertion, but removing it hasn't broken anything (yet!)
+
+        // assert(high != bddtrue); assert (low != bddtrue);
+        
         // the rest of everything should be handled in two passes i think
         auto false_branch = from_any_bdd(low, apinfo, bsc);
         bsc.truth |= var_mask;

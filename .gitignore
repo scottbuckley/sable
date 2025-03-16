@@ -7,3 +7,4 @@ sable
 *.ins
 *.ltl
 *.detcount
+*.dSYM/*
