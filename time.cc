@@ -16,7 +16,7 @@ using namespace std;
 class Stopwatch {
 private:
   bool is_running = false;
-  steady_clock::time_point start_time = high_resolution_clock::now();
+  steady_clock::time_point start_time = steady_clock::now();
   nanoseconds elapsed = nanoseconds::zero();
   string label = "";
   unsigned graph_flag = TIMER_GRAPH_COMPONENT;
@@ -51,7 +51,7 @@ public:
   Stopwatch * start() {
     if (is_running) throw runtime_error("trying to start a stopwatch that's already running");
     is_running = true;
-    start_time = high_resolution_clock::now();
+    start_time = steady_clock::now();
     if (subsumption_parent) subsumption_parent->stop();
     return this;
   }
@@ -61,7 +61,7 @@ public:
   // }
 
   Stopwatch * stop() {
-    steady_clock::time_point stop_time = high_resolution_clock::now();
+    steady_clock::time_point stop_time = steady_clock::now();
     if (!is_running) throw runtime_error("trying to stop a stopwatch that isn't running");
     is_running = false;
     nanoseconds sub_elapsed = stop_time - start_time;
